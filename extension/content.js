@@ -275,21 +275,15 @@ async function fetchCredentialsAndLogin(hostname, selectors) {
 
     const deviceFingerprint = await getDeviceFingerprint();
 
-    // Step 1: Request a one-time token
-    console.log('[GroupBuy] Requesting one-time token...');
-    const tokenResponse = await fetch(`${API_URL}/extension/request-token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        accessCode: stored.accessCode,
-        deviceFingerprint,
-      }),
+    // Step 1: Request a one-time token via background script (bypasses Mixed Content)
+    console.log('[GroupBuy] Requesting one-time token via background script...');
+    const tokenResponse = await chrome.runtime.sendMessage({
+      type: 'REQUEST_TOKEN',
+      deviceFingerprint,
     });
 
-    const tokenData = await tokenResponse.json();
-
-    if (!tokenResponse.ok) {
-      console.error('[GroupBuy] Failed to get token:', tokenData.error);
+    if (!tokenResponse || !tokenResponse.success) {
+      console.error('[GroupBuy] Failed to get token:', tokenResponse?.error || 'Unknown error');
       return false;
     }
 
@@ -298,29 +292,24 @@ async function fetchCredentialsAndLogin(hostname, selectors) {
     const keyPair = await generateRSAKeyPair();
     const publicKeyPem = await exportPublicKeyToPEM(keyPair.publicKey);
 
-    // Step 3: Request encrypted credentials using one-time token
-    console.log('[GroupBuy] Fetching encrypted credentials...');
-    const credResponse = await fetch(`${API_URL}/extension/get-credentials-secure`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        oneTimeToken: tokenData.token,
-        publicKey: publicKeyPem,
-        product: hostname,
-        deviceFingerprint,
-      }),
+    // Step 3: Request encrypted credentials via background script (bypasses Mixed Content)
+    console.log('[GroupBuy] Fetching encrypted credentials via background script...');
+    const credResponse = await chrome.runtime.sendMessage({
+      type: 'FETCH_CREDENTIALS_SECURE',
+      oneTimeToken: tokenResponse.token,
+      publicKey: publicKeyPem,
+      product: hostname,
+      deviceFingerprint,
     });
 
-    const credData = await credResponse.json();
-
-    if (!credResponse.ok) {
-      console.error('[GroupBuy] Failed to get credentials:', credData.error);
+    if (!credResponse || !credResponse.success) {
+      console.error('[GroupBuy] Failed to get credentials:', credResponse?.error || 'Unknown error');
       return false;
     }
 
     // Step 4: Decrypt credentials using private key
     console.log('[GroupBuy] Decrypting credentials...');
-    const decryptedJson = await decryptWithPrivateKey(credData.encryptedCredentials, keyPair.privateKey);
+    const decryptedJson = await decryptWithPrivateKey(credResponse.encryptedCredentials, keyPair.privateKey);
     const credentials = JSON.parse(decryptedJson);
 
     // Verify timestamp to prevent replay attacks (allow 60 second window)
@@ -342,17 +331,14 @@ async function fetchCredentialsAndLogin(hostname, selectors) {
       console.log('[GroupBuy] Auto-login successful!');
       
       // Store session token for logout tracking
-      await chrome.storage.local.set({ sessionToken: credData.sessionToken });
+      await chrome.storage.local.set({ sessionToken: credResponse.sessionToken });
       
-      await fetch(`${API_URL}/extension/log-access`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accessCode: stored.accessCode,
-          action: 'login_success',
-          product: hostname,
-          deviceFingerprint,
-        }),
+      // Log access via background script (bypasses Mixed Content)
+      await chrome.runtime.sendMessage({
+        type: 'LOG_ACCESS_FROM_CONTENT',
+        action: 'login_success',
+        product: hostname,
+        deviceFingerprint,
       });
     }
 

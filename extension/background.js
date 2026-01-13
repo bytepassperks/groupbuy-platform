@@ -59,6 +59,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch(error => sendResponse({ error: error.message }));
     return true;
   }
+
+  // Handle secure credential fetch from content script (bypasses Mixed Content)
+  if (message.type === 'FETCH_CREDENTIALS_SECURE') {
+    handleSecureCredentialFetch(message)
+      .then(sendResponse)
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  // Handle one-time token request from content script
+  if (message.type === 'REQUEST_TOKEN') {
+    handleRequestToken(message)
+      .then(sendResponse)
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  // Handle log access from content script
+  if (message.type === 'LOG_ACCESS_FROM_CONTENT') {
+    handleLogAccessFromContent(message)
+      .then(sendResponse)
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
 });
 
 async function handleGetCredentials(message) {
@@ -160,3 +184,95 @@ setInterval(async () => {
     }
   }
 }, 5 * 60 * 1000);
+
+// Handler for requesting one-time token (called from content script)
+async function handleRequestToken(message) {
+  const stored = await chrome.storage.local.get(['accessCode']);
+  
+  if (!stored.accessCode) {
+    throw new Error('No access code stored');
+  }
+
+  console.log('[GroupBuy Background] Requesting one-time token...');
+  
+  const response = await fetch(`${API_URL}/extension/request-token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      accessCode: stored.accessCode,
+      deviceFingerprint: message.deviceFingerprint,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to get token');
+  }
+
+  return { success: true, token: data.token };
+}
+
+// Handler for secure credential fetch (called from content script)
+async function handleSecureCredentialFetch(message) {
+  console.log('[GroupBuy Background] Fetching encrypted credentials...');
+  
+  const response = await fetch(`${API_URL}/extension/get-credentials-secure`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      oneTimeToken: message.oneTimeToken,
+      publicKey: message.publicKey,
+      product: message.product,
+      deviceFingerprint: message.deviceFingerprint,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to get credentials');
+  }
+
+  // Store session token
+  if (data.sessionToken) {
+    await chrome.storage.local.set({
+      sessionToken: data.sessionToken,
+      currentProduct: message.product,
+    });
+  }
+
+  return { 
+    success: true, 
+    encryptedCredentials: data.encryptedCredentials,
+    sessionToken: data.sessionToken 
+  };
+}
+
+// Handler for logging access from content script
+async function handleLogAccessFromContent(message) {
+  const stored = await chrome.storage.local.get(['accessCode']);
+  
+  if (!stored.accessCode) {
+    throw new Error('No access code stored');
+  }
+
+  const response = await fetch(`${API_URL}/extension/log-access`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      accessCode: stored.accessCode,
+      action: message.action,
+      product: message.product,
+      deviceFingerprint: message.deviceFingerprint,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to log access');
+  }
+
+  return { success: true };
+}
