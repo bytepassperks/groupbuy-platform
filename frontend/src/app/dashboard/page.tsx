@@ -32,6 +32,8 @@ export default function DashboardPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
   const [isHydrated, setIsHydrated] = useState(false);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [showExtensionGuide, setShowExtensionGuide] = useState(true);
 
   useEffect(() => {
     setIsHydrated(true);
@@ -80,9 +82,6 @@ export default function DashboardPage() {
         const diff = expiry.getTime() - now.getTime();
         return Math.ceil(diff / (1000 * 60 * 60 * 24));
       };
-
-    const [copiedCode, setCopiedCode] = useState<string | null>(null);
-    const [showExtensionGuide, setShowExtensionGuide] = useState(true);
 
     const copyToClipboard = (code: string) => {
       navigator.clipboard.writeText(code);
