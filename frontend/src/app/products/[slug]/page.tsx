@@ -14,14 +14,12 @@ interface Product {
   name: string;
   slug: string;
   category: string;
-  icon_url?: string;
+  iconUrl?: string;
   description?: string;
-  price: string;
-  renewal_period: string;
-  max_concurrent_users: number;
-  login_url?: string;
-  status: string;
-  has_purchased?: boolean;
+  price: number;
+  renewalPeriod: string;
+  maxConcurrentUsers: number;
+  loginUrl?: string;
 }
 
 export default function ProductDetailPage() {
@@ -40,6 +38,7 @@ export default function ProductDetailPage() {
   });
 
   const product: Product | undefined = productData?.data?.product;
+  const userHasPurchased: boolean = productData?.data?.userHasPurchased || false;
 
   const handlePurchase = async () => {
     if (!user) {
@@ -117,13 +116,13 @@ export default function ProductDetailPage() {
           <Card>
             <CardContent className="p-8">
               <div className="flex items-start gap-6 mb-6">
-                {product.icon_url ? (
-                  <img
-                    src={product.icon_url}
-                    alt={product.name}
-                    className="w-20 h-20 rounded-xl object-cover"
-                  />
-                ) : (
+                                {product.iconUrl ? (
+                                  <img
+                                    src={product.iconUrl}
+                                    alt={product.name}
+                                    className="w-20 h-20 rounded-xl object-cover"
+                                  />
+                                ) : (
                   <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
                     <span className="text-3xl font-bold text-white">
                       {product.name.charAt(0)}
@@ -157,34 +156,34 @@ export default function ProductDetailPage() {
                   <Users className="w-8 h-8 text-blue-600" />
                   <div>
                     <p className="text-sm font-medium text-gray-900">Shared Access</p>
-                    <p className="text-xs text-gray-500">Up to {product.max_concurrent_users} users</p>
+                    <p className="text-xs text-gray-500">Up to {product.maxConcurrentUsers} users</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
                   <Clock className="w-8 h-8 text-purple-600" />
                   <div>
                     <p className="text-sm font-medium text-gray-900">Renewal</p>
-                    <p className="text-xs text-gray-500">{product.renewal_period}</p>
+                    <p className="text-xs text-gray-500">{product.renewalPeriod}</p>
                   </div>
                 </div>
               </div>
 
-              {product.login_url && (
-                <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-                  <div className="flex items-center gap-2 text-blue-800">
-                    <ExternalLink className="w-4 h-4" />
-                    <span className="text-sm font-medium">Service URL:</span>
-                    <a
-                      href={product.login_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-blue-600 hover:underline"
-                    >
-                      {product.login_url}
-                    </a>
-                  </div>
-                </div>
-              )}
+                            {product.loginUrl && (
+                              <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                                <div className="flex items-center gap-2 text-blue-800">
+                                  <ExternalLink className="w-4 h-4" />
+                                  <span className="text-sm font-medium">Service URL:</span>
+                                  <a
+                                    href={product.loginUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-sm text-blue-600 hover:underline"
+                                  >
+                                    {product.loginUrl}
+                                  </a>
+                                </div>
+                              </div>
+                            )}
             </CardContent>
           </Card>
         </div>
@@ -194,10 +193,10 @@ export default function ProductDetailPage() {
             <CardContent className="p-6">
               <div className="text-center mb-6">
                 <p className="text-sm text-gray-500 mb-1">Price</p>
-                <p className="text-4xl font-bold text-gray-900">
-                  ${parseFloat(product.price).toFixed(2)}
-                </p>
-                <p className="text-sm text-gray-500">per {product.renewal_period}</p>
+                                <p className="text-4xl font-bold text-gray-900">
+                                  ${product.price.toFixed(2)}
+                                </p>
+                                <p className="text-sm text-gray-500">per {product.renewalPeriod}</p>
               </div>
 
               {error && (
@@ -206,7 +205,7 @@ export default function ProductDetailPage() {
                 </div>
               )}
 
-              {product.has_purchased ? (
+              {userHasPurchased ? (
                 <div className="space-y-3">
                   <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm text-center">
                     You already have access to this product
