@@ -31,18 +31,25 @@ router.post('/verify-code', async (req, res) => {
     const purchase = result.rows[0];
 
     const subscriptions = await db.query(
-      `SELECT prod.name as product_name, prod.login_url, p.expires_at FROM purchases p
+      `SELECT prod.id as product_id, prod.name as product_name, prod.login_url, p.expires_at FROM purchases p
        JOIN products prod ON p.product_id = prod.id
        WHERE p.user_id = $1 AND p.status = $2 AND p.expires_at > NOW()`,
       [purchase.user_id, 'active']
     );
 
+    const userResult = await db.query(
+      'SELECT email FROM users WHERE id = $1',
+      [purchase.user_id]
+    );
+
     res.json({
       success: true,
+      user: userResult.rows[0] ? { email: userResult.rows[0].email } : null,
       subscriptions: subscriptions.rows.map((row: any) => ({
-        productName: row.product_name,
-        loginUrl: row.login_url,
-        expiresAt: row.expires_at
+        product_id: row.product_id,
+        product_name: row.product_name,
+        login_url: row.login_url,
+        expires_at: row.expires_at
       }))
     });
   } catch (error) {
@@ -190,6 +197,7 @@ router.post('/get-credentials', async (req, res) => {
         productName: purchase.prod_name,
         expiresAt: purchase.expires_at
       },
+      loginUrl: purchase.login_url,
       sessionToken: sessionToken
     });
 

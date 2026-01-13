@@ -1,3 +1,5 @@
+const API_URL = 'http://165.22.2.0/api';
+
 const LOGIN_SELECTORS = {
   'semrush.com': {
     emailField: 'input[name="email"], input[type="email"]',
@@ -24,10 +26,10 @@ const LOGIN_SELECTORS = {
     loginPageIndicator: '.login-form, [data-uia="login-page-container"]',
   },
   'blinkist.com': {
-    emailField: 'input[name="email"], input[type="email"], #email',
-    passwordField: 'input[name="password"], input[type="password"], #password',
-    submitButton: 'button[type="submit"], input[type="submit"], .login-button',
-    loginPageIndicator: '.login-form, [data-testid="login-form"], form[action*="login"]',
+    emailField: 'input[name="login[email]"], input[name="email"], input[type="email"]',
+    passwordField: 'input[name="login[password]"], input[name="password"], input[type="password"]',
+    submitButton: 'input[type="submit"][name="commit"], button[type="submit"]',
+    loginPageIndicator: 'form input[name="login[email]"], h1',
   },
 };
 
@@ -144,28 +146,116 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+async function getDeviceFingerprint() {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.textBaseline = 'top';
+  ctx.font = '14px Arial';
+  ctx.fillText('fingerprint', 2, 2);
+  const canvasData = canvas.toDataURL();
+
+  const fingerprint = [
+    navigator.userAgent,
+    navigator.language,
+    screen.width + 'x' + screen.height,
+    new Date().getTimezoneOffset(),
+    canvasData.slice(-50),
+  ].join('|');
+
+  const encoder = new TextEncoder();
+  const data = encoder.encode(fingerprint);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function fetchCredentialsAndLogin(hostname, selectors) {
+  try {
+    console.log('[GroupBuy] Fetching credentials from backend...');
+    
+    const stored = await chrome.storage.local.get(['accessCode']);
+    
+    if (!stored.accessCode) {
+      console.log('[GroupBuy] No access code found. Please enter your access code in the extension popup.');
+      return false;
+    }
+
+    const deviceFingerprint = await getDeviceFingerprint();
+
+    const response = await fetch(`${API_URL}/extension/get-credentials`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        accessCode: stored.accessCode,
+        product: hostname,
+        deviceFingerprint,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('[GroupBuy] Failed to get credentials:', data.error);
+      return false;
+    }
+
+    console.log('[GroupBuy] Credentials received, performing auto-login...');
+
+    const success = await performLogin(data.credentials, selectors);
+
+    if (success) {
+      console.log('[GroupBuy] Auto-login successful!');
+      
+      await fetch(`${API_URL}/extension/log-access`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accessCode: stored.accessCode,
+          action: 'login_success',
+          product: hostname,
+          deviceFingerprint,
+        }),
+      });
+    }
+
+    return success;
+  } catch (error) {
+    console.error('[GroupBuy] Error fetching credentials:', error);
+    return false;
+  }
+}
+
 (async function() {
   const hostname = getHostname();
   if (!hostname) return;
 
-  const stored = await chrome.storage.local.get(['pendingLogin', 'currentProduct']);
+  await new Promise(resolve => setTimeout(resolve, 2000));
+
+  const selectors = LOGIN_SELECTORS[hostname];
   
-  if (stored.pendingLogin && stored.pendingLogin.productId === stored.currentProduct) {
-    const selectors = LOGIN_SELECTORS[hostname];
-    
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    const isLoginPage = !!document.querySelector(selectors.loginPageIndicator) ||
-                        !!document.querySelector(selectors.emailField);
-    
-    if (isLoginPage) {
-      console.log('[GroupBuy] Detected login page, attempting auto-login...');
-      
-      const success = await performLogin(stored.pendingLogin.credentials, selectors);
-      
-      if (success) {
-        await chrome.storage.local.remove(['pendingLogin']);
-      }
-    }
+  const emailField = document.querySelector(selectors.emailField);
+  const passwordField = document.querySelector(selectors.passwordField);
+  
+  const isLoginPage = emailField && passwordField;
+  
+  if (!isLoginPage) {
+    console.log('[GroupBuy] Not a login page, skipping auto-login');
+    return;
   }
+
+  console.log('[GroupBuy] Login page detected on', hostname);
+
+  const stored = await chrome.storage.local.get(['accessCode', 'autoLoginEnabled']);
+  
+  if (!stored.accessCode) {
+    console.log('[GroupBuy] No access code stored. Please enter your access code in the extension popup.');
+    return;
+  }
+
+  if (stored.autoLoginEnabled === false) {
+    console.log('[GroupBuy] Auto-login is disabled');
+    return;
+  }
+
+  await fetchCredentialsAndLogin(hostname, selectors);
 })();
