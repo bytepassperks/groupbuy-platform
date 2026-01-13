@@ -130,6 +130,10 @@ export const adminApi = {
       description?: string;
       iconUrl?: string;
       twoFaCodes?: string;
+      emailSelector?: string;
+      passwordSelector?: string;
+      submitSelector?: string;
+      loginPageIndicator?: string;
     }) => api.post('/admin/products/add', data),
     
     update: (id: number, data: Partial<{
@@ -144,6 +148,10 @@ export const adminApi = {
       iconUrl: string;
       status: string;
       twoFaCodes: string;
+      emailSelector: string;
+      passwordSelector: string;
+      submitSelector: string;
+      loginPageIndicator: string;
     }>) => api.put(`/admin/products/${id}`, data),
     
     delete: (id: number) => api.delete(`/admin/products/${id}`),
