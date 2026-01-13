@@ -1,5 +1,33 @@
 const API_URL = 'http://165.22.2.0/api';
 
+// Cache for dynamically fetched selectors
+let cachedSelectors = null;
+let cachedHostname = null;
+
+// Fetch selectors from backend for dynamic configuration
+async function fetchSelectorsFromBackend(hostname) {
+  try {
+    // Use background script to fetch selectors (bypasses Mixed Content)
+    const response = await chrome.runtime.sendMessage({
+      type: 'FETCH_SELECTORS',
+      domain: hostname,
+    });
+
+    if (response && response.supported) {
+      return {
+        emailField: response.selectors.email || 'input[type="email"], input[name="email"]',
+        passwordField: response.selectors.password || 'input[type="password"], input[name="password"]',
+        submitButton: response.selectors.submit || 'button[type="submit"], input[type="submit"]',
+        loginPageIndicator: response.selectors.loginPageIndicator || 'form',
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('[GroupBuy] Error fetching selectors:', error);
+    return null;
+  }
+}
+
 // RSA key generation for secure credential transfer
 async function generateRSAKeyPair() {
   const keyPair = await crypto.subtle.generateKey(
@@ -66,12 +94,25 @@ const LOGIN_SELECTORS = {
 };
 
 function getHostname() {
-  const hostname = window.location.hostname;
+  // Return the actual hostname for dynamic lookup
+  return window.location.hostname;
+}
+
+// Check if we have selectors for this hostname (either hardcoded or from backend)
+async function getSelectorsForHostname(hostname) {
+  // First check hardcoded selectors (for backward compatibility)
   for (const domain of Object.keys(LOGIN_SELECTORS)) {
     if (hostname.includes(domain.replace('*.', ''))) {
-      return domain;
+      return { selectors: LOGIN_SELECTORS[domain], matchedDomain: domain };
     }
   }
+  
+  // If not found in hardcoded list, try to fetch from backend
+  const dynamicSelectors = await fetchSelectorsFromBackend(hostname);
+  if (dynamicSelectors) {
+    return { selectors: dynamicSelectors, matchedDomain: hostname };
+  }
+  
   return null;
 }
 
@@ -205,37 +246,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'AUTO_LOGIN') {
     const hostname = getHostname();
     
-    if (!hostname) {
-      console.log('[GroupBuy] Unknown website, cannot auto-login');
-      sendResponse({ success: false, error: 'Unknown website' });
-      return;
-    }
+    // Get selectors dynamically
+    getSelectorsForHostname(hostname).then(selectorResult => {
+      if (!selectorResult) {
+        console.log('[GroupBuy] Unknown website, cannot auto-login');
+        sendResponse({ success: false, error: 'Unknown website' });
+        return;
+      }
 
-    const selectors = LOGIN_SELECTORS[hostname];
-    
-    performLogin(message.credentials, selectors)
-      .then(success => {
-        sendResponse({ success });
-      })
-      .catch(error => {
-        sendResponse({ success: false, error: error.message });
-      });
+      const { selectors, matchedDomain } = selectorResult;
+      
+      performLogin(message.credentials, selectors)
+        .then(success => {
+          sendResponse({ success });
+        })
+        .catch(error => {
+          sendResponse({ success: false, error: error.message });
+        });
+    });
 
     return true;
   }
 
   if (message.type === 'CHECK_LOGIN_PAGE') {
     const hostname = getHostname();
-    if (!hostname) {
-      sendResponse({ isLoginPage: false });
-      return;
-    }
-
-    const selectors = LOGIN_SELECTORS[hostname];
-    const isLoginPage = !!document.querySelector(selectors.loginPageIndicator) ||
-                        !!document.querySelector(selectors.emailField);
     
-    sendResponse({ isLoginPage, hostname });
+    // Get selectors dynamically
+    getSelectorsForHostname(hostname).then(selectorResult => {
+      if (!selectorResult) {
+        sendResponse({ isLoginPage: false });
+        return;
+      }
+
+      const { selectors, matchedDomain } = selectorResult;
+      const isLoginPage = !!document.querySelector(selectors.loginPageIndicator) ||
+                          !!document.querySelector(selectors.emailField);
+      
+      sendResponse({ isLoginPage, hostname: matchedDomain });
+    });
+    
+    return true;
   }
 });
 
@@ -361,7 +411,16 @@ async function fetchCredentialsAndLogin(hostname, selectors) {
 
   await new Promise(resolve => setTimeout(resolve, 1000));
 
-  const selectors = LOGIN_SELECTORS[hostname];
+  // Get selectors dynamically (either from hardcoded list or backend)
+  const selectorResult = await getSelectorsForHostname(hostname);
+  
+  if (!selectorResult) {
+    console.log('[GroupBuy] No configuration found for', hostname);
+    return;
+  }
+  
+  const { selectors, matchedDomain } = selectorResult;
+  console.log('[GroupBuy] Using selectors for', matchedDomain);
   
   try {
     const emailField = await waitForElement(selectors.emailField, 5000);
@@ -377,7 +436,7 @@ async function fetchCredentialsAndLogin(hostname, selectors) {
       console.log('[GroupBuy] Warning: Email field is not inside a form element');
     }
 
-    console.log('[GroupBuy] Login page detected on', hostname);
+    console.log('[GroupBuy] Login page detected on', matchedDomain);
 
     const stored = await chrome.storage.local.get(['accessCode', 'autoLoginEnabled']);
     
@@ -391,7 +450,7 @@ async function fetchCredentialsAndLogin(hostname, selectors) {
       return;
     }
 
-    await fetchCredentialsAndLogin(hostname, selectors);
+    await fetchCredentialsAndLogin(matchedDomain, selectors);
     
   } catch (error) {
     console.log('[GroupBuy] Login form not found:', error.message);

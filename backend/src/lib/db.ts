@@ -65,12 +65,18 @@ export async function initializeDatabase(): Promise<void> {
         max_concurrent_users INTEGER DEFAULT 5,
         current_concurrent_users INTEGER DEFAULT 0,
         login_url VARCHAR(500),
+        login_domain VARCHAR(255),
+        email_selector VARCHAR(500),
+        password_selector VARCHAR(500),
+        submit_selector VARCHAR(500),
+        login_page_indicator VARCHAR(500),
         status VARCHAR(50) DEFAULT 'active',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
       CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
       CREATE INDEX IF NOT EXISTS idx_products_slug ON products(slug);
+      CREATE INDEX IF NOT EXISTS idx_products_domain ON products(login_domain);
     `);
 
     await client.query(`

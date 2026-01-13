@@ -1,21 +1,15 @@
 {
   "manifest_version": 3,
   "name": "GroupBuy Auto-Login",
-  "version": "1.0.0",
-  "description": "Securely access your GroupBuy subscriptions with automatic login",
+  "version": "1.1.0",
+  "description": "Securely access your GroupBuy subscriptions with automatic login. Supports dynamically configured websites.",
   "permissions": [
     "storage",
     "activeTab",
     "scripting"
   ],
   "host_permissions": [
-    "https://*.semrush.com/*",
-    "https://*.ahrefs.com/*",
-    "https://*.canva.com/*",
-    "https://*.netflix.com/*",
-    "https://*.grammarly.com/*",
-    "https://*.envato.com/*",
-    "https://*.blinkist.com/*"
+    "<all_urls>"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -31,11 +25,7 @@
   "content_scripts": [
     {
       "matches": [
-        "https://*.semrush.com/*",
-        "https://*.ahrefs.com/*",
-        "https://*.canva.com/*",
-        "https://*.netflix.com/*",
-        "https://*.blinkist.com/*"
+        "<all_urls>"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"

@@ -83,6 +83,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
   }
+
+  // Handle fetch selectors from content script (for dynamic configuration)
+  if (message.type === 'FETCH_SELECTORS') {
+    handleFetchSelectors(message)
+      .then(sendResponse)
+      .catch(error => sendResponse({ supported: false, error: error.message }));
+    return true;
+  }
 });
 
 async function handleGetCredentials(message) {
@@ -247,6 +255,36 @@ async function handleSecureCredentialFetch(message) {
     encryptedCredentials: data.encryptedCredentials,
     sessionToken: data.sessionToken 
   };
+}
+
+// Handler for fetching selectors from backend (for dynamic configuration)
+async function handleFetchSelectors(message) {
+  console.log('[GroupBuy Background] Fetching selectors for domain:', message.domain);
+  
+  try {
+    const response = await fetch(`${API_URL}/extension/selectors/${encodeURIComponent(message.domain)}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.log('[GroupBuy Background] No selectors found for domain:', message.domain);
+      return { supported: false };
+    }
+
+    console.log('[GroupBuy Background] Selectors found for:', data.productName);
+    return {
+      supported: true,
+      productName: data.productName,
+      loginUrl: data.loginUrl,
+      selectors: data.selectors,
+    };
+  } catch (error) {
+    console.error('[GroupBuy Background] Error fetching selectors:', error);
+    return { supported: false, error: error.message };
+  }
 }
 
 // Handler for logging access from content script

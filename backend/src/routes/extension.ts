@@ -585,4 +585,77 @@ router.get('/check-session', async (req, res) => {
   }
 });
 
+// Get login selectors for a domain (used by extension for dynamic configuration)
+router.get('/selectors/:domain', async (req, res) => {
+  const { domain } = req.params;
+
+  try {
+    if (!domain) {
+      res.status(400).json({ error: 'Domain is required' });
+      return;
+    }
+
+    // Find product by domain (exact match or partial match)
+    const result = await db.query(
+      `SELECT id, name, login_url, login_domain, email_selector, password_selector, 
+              submit_selector, login_page_indicator
+       FROM products 
+       WHERE status = 'active' 
+       AND (login_domain = $1 OR login_domain LIKE $2 OR login_url LIKE $2)
+       LIMIT 1`,
+      [domain, `%${domain}%`]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ 
+        error: 'No configuration found for this domain',
+        supported: false 
+      });
+      return;
+    }
+
+    const product = result.rows[0];
+
+    // Return selectors (may be null if not configured)
+    res.json({
+      supported: true,
+      productId: product.id,
+      productName: product.name,
+      loginUrl: product.login_url,
+      selectors: {
+        email: product.email_selector,
+        password: product.password_selector,
+        submit: product.submit_selector,
+        loginPageIndicator: product.login_page_indicator
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching selectors:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get all supported domains (for extension to know which sites to activate on)
+router.get('/supported-domains', async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT DISTINCT login_domain, login_url, name
+       FROM products 
+       WHERE status = 'active' AND login_domain IS NOT NULL`,
+      []
+    );
+
+    const domains = result.rows.map((row: any) => ({
+      domain: row.login_domain,
+      loginUrl: row.login_url,
+      productName: row.name
+    }));
+
+    res.json({ domains });
+  } catch (error) {
+    console.error('Error fetching supported domains:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router;

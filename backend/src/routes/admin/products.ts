@@ -7,7 +7,7 @@ import { AuthenticatedRequest, Product } from '../../types';
 const router = express.Router();
 
 router.post('/add', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res: Response) => {
-  const { name, category, price, email, password, maxUsers, loginUrl, description, iconUrl, twoFaCodes } = req.body;
+  const { name, category, price, email, password, maxUsers, loginUrl, description, iconUrl, twoFaCodes, emailSelector, passwordSelector, submitSelector, loginPageIndicator } = req.body;
 
   try {
     if (!name || !category || !price || !email || !password) {
@@ -35,12 +35,23 @@ router.post('/add', authMiddleware, adminOnly, async (req: AuthenticatedRequest,
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '');
 
+    // Extract domain from login URL for easier lookup
+    let loginDomain = null;
+    if (loginUrl) {
+      try {
+        const url = new URL(loginUrl);
+        loginDomain = url.hostname;
+      } catch (e) {
+        // Invalid URL, skip domain extraction
+      }
+    }
+
     const result = await db.query<Product>(
       `INSERT INTO products
        (name, slug, category, price, encrypted_email, encrypted_password, encrypted_2fa_codes,
-        max_concurrent_users, login_url, description, icon_url, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-       RETURNING id, name, slug, category, price, max_concurrent_users, login_url, status, created_at`,
+        max_concurrent_users, login_url, login_domain, email_selector, password_selector, submit_selector, login_page_indicator, description, icon_url, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+       RETURNING id, name, slug, category, price, max_concurrent_users, login_url, login_domain, email_selector, password_selector, submit_selector, login_page_indicator, status, created_at`,
       [
         name,
         slug,
@@ -51,6 +62,11 @@ router.post('/add', authMiddleware, adminOnly, async (req: AuthenticatedRequest,
         encrypted2faCodes,
         maxUsers || 5,
         loginUrl || null,
+        loginDomain,
+        emailSelector || null,
+        passwordSelector || null,
+        submitSelector || null,
+        loginPageIndicator || null,
         description || null,
         iconUrl || null,
         'active'
@@ -110,7 +126,9 @@ router.get('/', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res
     
     let query = `
       SELECT id, name, slug, category, icon_url, description, price, renewal_period,
-             max_concurrent_users, current_concurrent_users, login_url, status, created_at, updated_at
+             max_concurrent_users, current_concurrent_users, login_url, login_domain,
+             email_selector, password_selector, submit_selector, login_page_indicator,
+             status, created_at, updated_at
       FROM products
       WHERE 1=1
     `;
@@ -171,7 +189,9 @@ router.get('/:id', authMiddleware, adminOnly, async (req: AuthenticatedRequest, 
   try {
     const result = await db.query<Product>(
       `SELECT id, name, slug, category, icon_url, description, price, renewal_period,
-              max_concurrent_users, current_concurrent_users, login_url, status, created_at, updated_at
+              max_concurrent_users, current_concurrent_users, login_url, login_domain,
+              email_selector, password_selector, submit_selector, login_page_indicator,
+              status, created_at, updated_at
        FROM products WHERE id = $1`,
       [id]
     );
@@ -199,7 +219,7 @@ router.get('/:id', authMiddleware, adminOnly, async (req: AuthenticatedRequest, 
 
 router.put('/:id', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
-  const { name, category, price, email, password, maxUsers, loginUrl, description, iconUrl, status, twoFaCodes } = req.body;
+  const { name, category, price, email, password, maxUsers, loginUrl, description, iconUrl, status, twoFaCodes, emailSelector, passwordSelector, submitSelector, loginPageIndicator } = req.body;
 
   try {
     const existingResult = await db.query<Product>(
@@ -285,6 +305,46 @@ router.put('/:id', authMiddleware, adminOnly, async (req: AuthenticatedRequest, 
     if (status !== undefined) {
       updates.push(`status = $${paramIndex}`);
       params.push(status);
+      paramIndex++;
+    }
+
+    if (emailSelector !== undefined) {
+      updates.push(`email_selector = $${paramIndex}`);
+      params.push(emailSelector || null);
+      paramIndex++;
+    }
+
+    if (passwordSelector !== undefined) {
+      updates.push(`password_selector = $${paramIndex}`);
+      params.push(passwordSelector || null);
+      paramIndex++;
+    }
+
+    if (submitSelector !== undefined) {
+      updates.push(`submit_selector = $${paramIndex}`);
+      params.push(submitSelector || null);
+      paramIndex++;
+    }
+
+    if (loginPageIndicator !== undefined) {
+      updates.push(`login_page_indicator = $${paramIndex}`);
+      params.push(loginPageIndicator || null);
+      paramIndex++;
+    }
+
+    // Update login_domain if loginUrl changed
+    if (loginUrl !== undefined) {
+      let loginDomain = null;
+      if (loginUrl) {
+        try {
+          const url = new URL(loginUrl);
+          loginDomain = url.hostname;
+        } catch (e) {
+          // Invalid URL, skip domain extraction
+        }
+      }
+      updates.push(`login_domain = $${paramIndex}`);
+      params.push(loginDomain);
       paramIndex++;
     }
 

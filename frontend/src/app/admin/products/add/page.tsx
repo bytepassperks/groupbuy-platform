@@ -27,6 +27,10 @@ export default function AddProductPage() {
     description: '',
     iconUrl: '',
     twoFaCodes: '',
+    emailSelector: '',
+    passwordSelector: '',
+    submitSelector: '',
+    loginPageIndicator: '',
   });
 
   useEffect(() => {
@@ -51,6 +55,10 @@ export default function AddProductPage() {
       description: data.description || undefined,
       iconUrl: data.iconUrl || undefined,
       twoFaCodes: data.twoFaCodes || undefined,
+      emailSelector: data.emailSelector || undefined,
+      passwordSelector: data.passwordSelector || undefined,
+      submitSelector: data.submitSelector || undefined,
+      loginPageIndicator: data.loginPageIndicator || undefined,
     }),
     onSuccess: () => {
       router.push('/admin/products');
@@ -209,18 +217,72 @@ export default function AddProductPage() {
             </div>
 
             <div className="border-t pt-6">
-              <h3 className="text-md font-semibold text-gray-900 mb-4">Additional Information</h3>
+              <h3 className="text-md font-semibold text-gray-900 mb-4">Extension Auto-Login Configuration</h3>
+              <p className="text-sm text-gray-500 mb-4">
+                Configure the login page selectors so the browser extension can automatically fill credentials. Use CSS selectors to identify form elements.
+              </p>
 
               <div className="space-y-4">
                 <Input
                   id="loginUrl"
                   name="loginUrl"
-                  label="Login URL"
+                  label="Login URL *"
                   type="url"
                   value={formData.loginUrl}
                   onChange={handleChange}
                   placeholder="https://example.com/login"
                 />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    id="emailSelector"
+                    name="emailSelector"
+                    label="Email Field Selector"
+                    value={formData.emailSelector}
+                    onChange={handleChange}
+                    placeholder="input[type='email'], #email, input[name='email']"
+                  />
+
+                  <Input
+                    id="passwordSelector"
+                    name="passwordSelector"
+                    label="Password Field Selector"
+                    value={formData.passwordSelector}
+                    onChange={handleChange}
+                    placeholder="input[type='password'], #password"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    id="submitSelector"
+                    name="submitSelector"
+                    label="Submit Button Selector"
+                    value={formData.submitSelector}
+                    onChange={handleChange}
+                    placeholder="button[type='submit'], .login-btn"
+                  />
+
+                  <Input
+                    id="loginPageIndicator"
+                    name="loginPageIndicator"
+                    label="Login Page Indicator (optional)"
+                    value={formData.loginPageIndicator}
+                    onChange={handleChange}
+                    placeholder="form.login-form, #login-container"
+                  />
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+                  <strong>How to find selectors:</strong> Right-click on the login form element in Chrome, select "Inspect", then right-click the highlighted element and choose "Copy selector". Common patterns: <code className="bg-blue-100 px-1 rounded">input[type=&apos;email&apos;]</code>, <code className="bg-blue-100 px-1 rounded">#email</code>, <code className="bg-blue-100 px-1 rounded">input[name=&apos;username&apos;]</code>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t pt-6">
+              <h3 className="text-md font-semibold text-gray-900 mb-4">Additional Information</h3>
+
+              <div className="space-y-4">
 
                 <Input
                   id="iconUrl"
