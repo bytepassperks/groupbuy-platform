@@ -37,12 +37,13 @@ export default function AdminProductDetailPage() {
     price: '',
     maxUsers: '',
     loginUrl: '',
+    serviceUrl: '',
     description: '',
     iconUrl: '',
     status: 'active',
-    email: '',
-    password: '',
-    twoFaCodes: '',
+    sessionCookies: '',
+    sessionExpiresAt: '',
+    renewalPeriod: 'annual',
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -55,9 +56,9 @@ export default function AdminProductDetailPage() {
     enabled: !!productId && !authLoading && user?.role === 'admin',
   });
 
-  const { data: credentialsData, refetch: refetchCredentials } = useQuery({
-    queryKey: ['admin-product-credentials', productId],
-    queryFn: () => adminApi.products.getCredentials(productId),
+  const { data: sessionData, refetch: refetchSession } = useQuery({
+    queryKey: ['admin-product-session', productId],
+    queryFn: () => adminApi.products.getSession(productId),
     enabled: showCredentials && !!productId,
   });
 
@@ -93,12 +94,13 @@ export default function AdminProductDetailPage() {
         price: p.price?.toString() || '',
         maxUsers: p.max_concurrent_users?.toString() || '',
         loginUrl: p.login_url || '',
+        serviceUrl: p.service_url || '',
         description: p.description || '',
         iconUrl: p.icon_url || '',
         status: p.status || 'active',
-        email: '',
-        password: '',
-        twoFaCodes: '',
+        sessionCookies: '',
+        sessionExpiresAt: p.session_expires_at ? new Date(p.session_expires_at).toISOString().slice(0, 16) : '',
+        renewalPeriod: p.renewal_period || 'annual',
       });
     }
   }, [productData]);
@@ -152,19 +154,23 @@ export default function AdminProductDetailPage() {
       price: parseFloat(formData.price),
       maxUsers: parseInt(formData.maxUsers, 10),
       loginUrl: formData.loginUrl,
+      serviceUrl: formData.serviceUrl,
       description: formData.description,
       iconUrl: formData.iconUrl,
       status: formData.status,
+      renewalPeriod: formData.renewalPeriod,
     };
 
-    if (formData.email) {
-      updateData.email = formData.email;
+    if (formData.sessionCookies) {
+      try {
+        updateData.sessionCookies = JSON.parse(formData.sessionCookies);
+      } catch {
+        setError('Invalid JSON format for session cookies');
+        return;
+      }
     }
-    if (formData.password) {
-      updateData.password = formData.password;
-    }
-    if (formData.twoFaCodes) {
-      updateData.twoFaCodes = formData.twoFaCodes;
+    if (formData.sessionExpiresAt) {
+      updateData.sessionExpiresAt = formData.sessionExpiresAt;
     }
 
     updateMutation.mutate(updateData);
@@ -176,9 +182,9 @@ export default function AdminProductDetailPage() {
     }
   };
 
-  const handleShowCredentials = () => {
+  const handleShowSession = () => {
     setShowCredentials(true);
-    refetchCredentials();
+    refetchSession();
   };
 
   return (
@@ -315,12 +321,12 @@ export default function AdminProductDetailPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
-              <span>Credentials (Encrypted)</span>
+              <span>Session Cookies (Encrypted)</span>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={handleShowCredentials}
+                onClick={handleShowSession}
               >
                 {showCredentials ? <EyeOff className="w-4 h-4 mr-2" /> : <Eye className="w-4 h-4 mr-2" />}
                 {showCredentials ? 'Hide' : 'Show'} Current
@@ -328,48 +334,64 @@ export default function AdminProductDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {showCredentials && credentialsData?.data && (
+            {showCredentials && sessionData?.data && (
               <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg mb-4">
-                <p className="text-sm text-yellow-800 font-medium mb-2">Current Credentials:</p>
-                <p className="text-sm text-yellow-700">Email: {credentialsData.data.email}</p>
-                <p className="text-sm text-yellow-700">Password: {credentialsData.data.password}</p>
-                {credentialsData.data.twoFaCodes && (
-                  <p className="text-sm text-yellow-700">2FA Codes: {credentialsData.data.twoFaCodes}</p>
+                <p className="text-sm text-yellow-800 font-medium mb-2">Current Session Cookies:</p>
+                <pre className="text-xs text-yellow-700 overflow-auto max-h-40">
+                  {JSON.stringify(sessionData.data.sessionCookies, null, 2)}
+                </pre>
+                {sessionData.data.sessionExpiresAt && (
+                  <p className="text-sm text-yellow-700 mt-2">
+                    Expires: {new Date(sessionData.data.sessionExpiresAt).toLocaleString()}
+                  </p>
                 )}
               </div>
             )}
 
-            <p className="text-sm text-gray-500">Leave blank to keep existing credentials. Fill in to update.</p>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email (leave blank to keep current)</label>
-              <Input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="account@example.com"
-              />
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800 font-medium mb-2">How to capture session cookies:</p>
+              <ol className="text-sm text-blue-700 list-decimal list-inside space-y-1">
+                <li>Log into the service in Chrome</li>
+                <li>Open DevTools (F12) and go to Application tab</li>
+                <li>Click on Cookies in the left sidebar</li>
+                <li>Select the domain and copy all cookies as JSON</li>
+              </ol>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password (leave blank to keep current)</label>
-              <Input
-                type="text"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                placeholder="Enter new password"
-              />
-            </div>
+            <p className="text-sm text-gray-500">Leave blank to keep existing session. Fill in to update.</p>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">2FA Backup Codes (leave blank to keep current)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Session Cookies (JSON format)</label>
               <textarea
-                value={formData.twoFaCodes}
-                onChange={(e) => setFormData({ ...formData, twoFaCodes: e.target.value })}
-                rows={2}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter backup codes, one per line"
+                value={formData.sessionCookies}
+                onChange={(e) => setFormData({ ...formData, sessionCookies: e.target.value })}
+                rows={6}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                placeholder='[{"name": "session_id", "value": "abc123", "domain": ".example.com", "path": "/", "secure": true, "httpOnly": true}]'
               />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Session Expires At</label>
+                <Input
+                  type="datetime-local"
+                  value={formData.sessionExpiresAt}
+                  onChange={(e) => setFormData({ ...formData, sessionExpiresAt: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Renewal Period</label>
+                <select
+                  value={formData.renewalPeriod}
+                  onChange={(e) => setFormData({ ...formData, renewalPeriod: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="monthly">Monthly</option>
+                  <option value="annual">Yearly</option>
+                  <option value="lifetime">Lifetime</option>
+                </select>
+              </div>
             </div>
           </CardContent>
         </Card>
