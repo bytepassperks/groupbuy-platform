@@ -200,9 +200,10 @@ export default function DashboardPage() {
                           <ol className="text-xs text-gray-600 space-y-1 list-decimal list-inside">
                             <li>Extract the ZIP file</li>
                             <li>Open <code className="bg-gray-200 px-1 rounded">chrome://extensions</code></li>
-                            <li>Enable &quot;Developer mode&quot;</li>
+                            <li>Enable &quot;Developer mode&quot; (top right)</li>
                             <li>Click &quot;Load unpacked&quot;</li>
-                            <li>Select the <code className="bg-gray-200 px-1 rounded">extension/dist</code> folder</li>
+                            <li>Navigate into the extracted folder</li>
+                            <li>Select <code className="bg-gray-200 px-1 rounded">extension → dist</code></li>
                           </ol>
                         </div>
                       </div>
