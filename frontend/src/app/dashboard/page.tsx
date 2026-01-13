@@ -83,10 +83,31 @@ export default function DashboardPage() {
         return Math.ceil(diff / (1000 * 60 * 60 * 24));
       };
 
-    const copyToClipboard = (code: string) => {
-      navigator.clipboard.writeText(code);
-      setCopiedCode(code);
-      setTimeout(() => setCopiedCode(null), 2000);
+    const copyToClipboard = async (code: string) => {
+      try {
+        // Try modern clipboard API first
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(code);
+        } else {
+          // Fallback for HTTP sites - use execCommand
+          const textArea = document.createElement('textarea');
+          textArea.value = code;
+          textArea.style.position = 'fixed';
+          textArea.style.left = '-999999px';
+          textArea.style.top = '-999999px';
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          document.execCommand('copy');
+          textArea.remove();
+        }
+        setCopiedCode(code);
+        setTimeout(() => setCopiedCode(null), 2000);
+      } catch (err) {
+        console.error('Failed to copy:', err);
+        // Still show feedback even if copy fails
+        alert('Copy failed. Please select and copy manually: ' + code);
+      }
     };
 
     const extensionDownloadUrl = 'https://github.com/bytepassperks/groupbuy-platform/archive/refs/heads/devin/1768279360-groupbuy-platform.zip';
