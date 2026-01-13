@@ -1,5 +1,8 @@
 const API_URL = 'http://165.22.2.0/api';
 
+// Track tabs that are on supported domains (for auto-logout on tab close)
+const activeTabs = new Map(); // tabId -> { domain, productName }
+
 // Security: Clear any sensitive data on extension install/update
 chrome.runtime.onInstalled.addListener(() => {
   console.log('[GroupBuy] Extension installed/updated');
@@ -9,10 +12,9 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete') return;
+  if (!tab.url) return;
   
   const stored = await chrome.storage.local.get(['sessionToken', 'currentProduct', 'accessCode']);
-  
-  if (!stored.sessionToken || !stored.currentProduct) return;
 
   const supportedDomains = [
     'semrush.com',
@@ -22,10 +24,27 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     'blinkist.com',
   ];
 
-  const url = new URL(tab.url || '');
-  const isSupported = supportedDomains.some(domain => url.hostname.includes(domain));
+  const url = new URL(tab.url);
+  const matchedDomain = supportedDomains.find(domain => url.hostname.includes(domain));
 
-  if (!isSupported) return;
+  if (matchedDomain) {
+    // Track this tab as being on a supported domain
+    activeTabs.set(tabId, { 
+      domain: url.hostname, 
+      baseDomain: matchedDomain,
+      url: tab.url 
+    });
+    console.log('[GroupBuy] Tracking tab', tabId, 'on domain:', matchedDomain);
+  } else {
+    // Tab navigated away from supported domain, remove from tracking
+    if (activeTabs.has(tabId)) {
+      console.log('[GroupBuy] Tab', tabId, 'navigated away from supported domain');
+      activeTabs.delete(tabId);
+    }
+    return;
+  }
+
+  if (!stored.sessionToken || !stored.currentProduct) return;
 
   try {
     const response = await chrome.tabs.sendMessage(tabId, { type: 'CHECK_LOGIN_PAGE' });
@@ -37,6 +56,73 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     console.log('[GroupBuy] Content script not ready yet');
   }
 });
+
+// Auto-logout when tab is closed: Clear cookies for the domain
+chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
+  const tabInfo = activeTabs.get(tabId);
+  
+  if (!tabInfo) {
+    return; // Tab wasn't on a supported domain
+  }
+  
+  console.log('[GroupBuy] Tab closed on supported domain:', tabInfo.baseDomain);
+  activeTabs.delete(tabId);
+  
+  // Clear all cookies for this domain to log the user out
+  try {
+    await clearCookiesForDomain(tabInfo.baseDomain);
+    console.log('[GroupBuy] Cleared cookies for', tabInfo.baseDomain, '- user logged out');
+    
+    // Also notify backend about logout
+    const stored = await chrome.storage.local.get(['accessCode', 'sessionToken']);
+    if (stored.accessCode) {
+      await fetch(`${API_URL}/extension/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          accessCode: stored.accessCode,
+          sessionToken: stored.sessionToken 
+        }),
+      }).catch(err => console.log('[GroupBuy] Failed to notify backend of logout:', err));
+    }
+  } catch (error) {
+    console.error('[GroupBuy] Error clearing cookies on tab close:', error);
+  }
+});
+
+// Helper function to clear all cookies for a domain
+async function clearCookiesForDomain(baseDomain) {
+  console.log('[GroupBuy] Clearing cookies for domain:', baseDomain);
+  
+  // Get all cookies for this domain
+  const cookies = await chrome.cookies.getAll({ domain: baseDomain });
+  
+  // Also get cookies for the parent domain (e.g., .blinkist.com)
+  const parentDomainCookies = await chrome.cookies.getAll({ domain: '.' + baseDomain });
+  
+  const allCookies = [...cookies, ...parentDomainCookies];
+  
+  // Remove duplicates based on name and domain
+  const uniqueCookies = allCookies.filter((cookie, index, self) =>
+    index === self.findIndex(c => c.name === cookie.name && c.domain === cookie.domain)
+  );
+  
+  console.log('[GroupBuy] Found', uniqueCookies.length, 'cookies to clear');
+  
+  for (const cookie of uniqueCookies) {
+    const protocol = cookie.secure ? 'https' : 'http';
+    const url = `${protocol}://${cookie.domain.replace(/^\./, '')}${cookie.path}`;
+    
+    try {
+      await chrome.cookies.remove({ url, name: cookie.name });
+      console.log('[GroupBuy] Removed cookie:', cookie.name);
+    } catch (error) {
+      console.error('[GroupBuy] Failed to remove cookie:', cookie.name, error);
+    }
+  }
+  
+  return uniqueCookies.length;
+}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'GET_CREDENTIALS') {
