@@ -169,58 +169,35 @@ async function performAutoLogin() {
   autoLoginBtn.textContent = 'Logging in...';
 
   try {
-    const deviceFingerprint = await getDeviceFingerprint();
-
-    const response = await fetch(`${API_URL}/extension/get-credentials`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        accessCode: currentAccessCode,
-        productId: subscription.product_id,
-        deviceFingerprint,
-      }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || 'Failed to get credentials');
+    // Clear any previous injection flags so cookies will be injected on the new page
+    // This is done via background script since we can't access the target page's sessionStorage
+    
+    // Get the login URL for this subscription
+    const loginUrl = subscription.login_url;
+    
+    if (!loginUrl) {
+      throw new Error('No login URL configured for this product');
     }
 
     await chrome.storage.local.set({
-      sessionToken: data.sessionToken,
       currentProduct: subscription.product_id,
+      autoLoginEnabled: true,
     });
 
+    // Navigate to the login URL - the content script will handle cookie injection
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     
-    if (tab && data.loginUrl) {
-      await chrome.tabs.update(tab.id, { url: data.loginUrl });
-      
-      setTimeout(async () => {
-        await chrome.tabs.sendMessage(tab.id, {
-          type: 'AUTO_LOGIN',
-          credentials: data.credentials,
-          loginUrl: data.loginUrl,
-        });
-      }, 2000);
+    if (tab) {
+      await chrome.tabs.update(tab.id, { url: loginUrl });
+    } else {
+      // Open in new tab if no active tab
+      await chrome.tabs.create({ url: loginUrl });
     }
 
-    await fetch(`${API_URL}/extension/log-access`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        accessCode: currentAccessCode,
-        productId: subscription.product_id,
-        action: 'login_initiated',
-        deviceFingerprint,
-      }),
-    });
-
+    // Close the popup
     window.close();
   } catch (error) {
     showError(error.message);
-  } finally {
     autoLoginBtn.disabled = false;
     autoLoginBtn.textContent = 'Auto-Login to Selected Tool';
   }

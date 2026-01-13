@@ -399,6 +399,13 @@ async function fetchCredentialsAndLogin(hostname, selectors) {
 
   console.log('[GroupBuy] Extension loaded on', hostname);
 
+  // Check if we already injected cookies for this domain in this session
+  const injectionKey = `groupbuy_injected_${hostname}`;
+  if (sessionStorage.getItem(injectionKey)) {
+    console.log('[GroupBuy] Cookies already injected for this session, skipping');
+    return;
+  }
+
   // Wait for page to fully load
   await new Promise(resolve => setTimeout(resolve, 1000));
 
@@ -436,10 +443,15 @@ async function fetchCredentialsAndLogin(hostname, selectors) {
 
     console.log('[GroupBuy] Domain supported, product:', response.productName);
 
+    // Mark as injected BEFORE injecting to prevent loops
+    sessionStorage.setItem(injectionKey, 'true');
+
     // Use session-based cookie injection
     await fetchSessionCookiesAndInject(hostname);
     
   } catch (error) {
     console.log('[GroupBuy] Error checking domain support:', error.message);
+    // Remove the injection flag if there was an error so user can retry
+    sessionStorage.removeItem(injectionKey);
   }
 })();
