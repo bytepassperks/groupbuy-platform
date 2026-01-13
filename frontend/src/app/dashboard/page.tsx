@@ -11,14 +11,21 @@ import { Package, Calendar, Key, RefreshCw, ExternalLink } from 'lucide-react';
 
 interface Purchase {
   id: number;
-  product_id: number;
-  product_name: string;
-  product_icon?: string;
-  access_code: string;
-  expires_at: string;
+  purchaseDate: string;
+  pricePaid: number;
+  accessCode: string;
+  startsAt: string;
+  expiresAt: string;
+  autoRenew: boolean;
   status: string;
-  auto_renew: boolean;
-  price_paid: string;
+  product: {
+    id: number;
+    name: string;
+    slug: string;
+    iconUrl?: string;
+    category: string;
+    loginUrl?: string;
+  };
 }
 
 export default function DashboardPage() {
@@ -61,12 +68,13 @@ export default function DashboardPage() {
     });
   };
 
-  const getDaysRemaining = (expiresAt: string) => {
-    const now = new Date();
-    const expiry = new Date(expiresAt);
-    const diff = expiry.getTime() - now.getTime();
-    return Math.ceil(diff / (1000 * 60 * 60 * 24));
-  };
+    const getDaysRemaining = (expiresAt: string) => {
+      if (!expiresAt) return 0;
+      const now = new Date();
+      const expiry = new Date(expiresAt);
+      const diff = expiry.getTime() - now.getTime();
+      return Math.ceil(diff / (1000 * 60 * 60 * 24));
+    };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -111,7 +119,7 @@ export default function DashboardPage() {
               <div className="ml-4">
                 <p className="text-sm text-gray-500">Expiring Soon</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {activePurchases.filter((p) => getDaysRemaining(p.expires_at) <= 30).length}
+                  {activePurchases.filter((p) => getDaysRemaining(p.expiresAt) <= 30).length}
                 </p>
               </div>
             </div>
@@ -149,42 +157,42 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {activePurchases.map((purchase) => {
-                const daysRemaining = getDaysRemaining(purchase.expires_at);
-                return (
-                  <div key={purchase.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
-                    <div className="flex items-center">
-                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                        {purchase.product_icon ? (
-                          <img src={purchase.product_icon} alt="" className="w-8 h-8 object-contain" />
-                        ) : (
-                          <Package className="w-6 h-6 text-blue-600" />
-                        )}
-                      </div>
-                      <div className="ml-4">
-                        <h3 className="font-semibold text-gray-900">{purchase.product_name}</h3>
-                        <p className="text-sm text-gray-500">
-                          Expires: {formatDate(purchase.expires_at)}
-                          {daysRemaining <= 30 && (
-                            <span className={`ml-2 ${daysRemaining <= 7 ? 'text-red-600' : 'text-yellow-600'}`}>
-                              ({daysRemaining} days left)
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-4">
-                      <div className="text-right">
-                        <p className="text-xs text-gray-500">Access Code</p>
-                        <code className="text-sm font-mono bg-gray-100 px-2 py-1 rounded">{purchase.access_code}</code>
-                      </div>
-                      <Button variant="outline" size="sm">
-                        <ExternalLink className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
+                            {activePurchases.map((purchase) => {
+                              const daysRemaining = getDaysRemaining(purchase.expiresAt);
+                              return (
+                                <div key={purchase.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
+                                  <div className="flex items-center">
+                                    <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                                      {purchase.product?.iconUrl ? (
+                                        <img src={purchase.product.iconUrl} alt="" className="w-8 h-8 object-contain" />
+                                      ) : (
+                                        <Package className="w-6 h-6 text-blue-600" />
+                                      )}
+                                    </div>
+                                    <div className="ml-4">
+                                      <h3 className="font-semibold text-gray-900">{purchase.product?.name || 'Unknown Product'}</h3>
+                                      <p className="text-sm text-gray-500">
+                                        Expires: {purchase.expiresAt ? formatDate(purchase.expiresAt) : 'N/A'}
+                                        {daysRemaining > 0 && daysRemaining <= 30 && (
+                                          <span className={`ml-2 ${daysRemaining <= 7 ? 'text-red-600' : 'text-yellow-600'}`}>
+                                            ({daysRemaining} days left)
+                                          </span>
+                                        )}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center space-x-4">
+                                    <div className="text-right">
+                                      <p className="text-xs text-gray-500">Access Code</p>
+                                      <code className="text-sm font-mono bg-gray-100 px-2 py-1 rounded">{purchase.accessCode}</code>
+                                    </div>
+                                    <Button variant="outline" size="sm">
+                                      <ExternalLink className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              );
+                            })}
             </div>
           )}
         </CardContent>
@@ -197,20 +205,20 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {expiredPurchases.map((purchase) => (
-                <div key={purchase.id} className="flex items-center justify-between p-4 border rounded-lg bg-gray-50 opacity-75">
-                  <div className="flex items-center">
-                    <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center">
-                      <Package className="w-6 h-6 text-gray-400" />
-                    </div>
-                    <div className="ml-4">
-                      <h3 className="font-semibold text-gray-700">{purchase.product_name}</h3>
-                      <p className="text-sm text-gray-500">Expired: {formatDate(purchase.expires_at)}</p>
-                    </div>
-                  </div>
-                  <Button size="sm">Renew</Button>
-                </div>
-              ))}
+                            {expiredPurchases.map((purchase) => (
+                              <div key={purchase.id} className="flex items-center justify-between p-4 border rounded-lg bg-gray-50 opacity-75">
+                                <div className="flex items-center">
+                                  <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center">
+                                    <Package className="w-6 h-6 text-gray-400" />
+                                  </div>
+                                  <div className="ml-4">
+                                    <h3 className="font-semibold text-gray-700">{purchase.product?.name || 'Unknown Product'}</h3>
+                                    <p className="text-sm text-gray-500">Expired: {purchase.expiresAt ? formatDate(purchase.expiresAt) : 'N/A'}</p>
+                                  </div>
+                                </div>
+                                <Button size="sm">Renew</Button>
+                              </div>
+                            ))}
             </div>
           </CardContent>
         </Card>
