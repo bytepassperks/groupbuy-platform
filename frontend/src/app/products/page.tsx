@@ -37,7 +37,7 @@ export default function ProductsPage() {
   });
 
   const products: Product[] = productsData?.data?.products || [];
-  const categories: string[] = categoriesData?.data?.categories || [];
+  const categories: { value: string; label: string; icon: string; count: number }[] = categoriesData?.data?.categories || [];
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -66,7 +66,7 @@ export default function ProductsPage() {
         >
           <option value="">All Categories</option>
           {categories.map((cat) => (
-            <option key={cat} value={cat}>{cat}</option>
+            <option key={cat.value} value={cat.value}>{cat.label}</option>
           ))}
         </select>
       </div>
