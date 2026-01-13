@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth';
@@ -31,12 +31,17 @@ interface Purchase {
 export default function DashboardPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
+  const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
+    setIsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (isHydrated && !authLoading && !isAuthenticated) {
       router.push('/login');
     }
-  }, [authLoading, isAuthenticated, router]);
+  }, [isHydrated, authLoading, isAuthenticated, router]);
 
   const { data: purchasesData, isLoading, refetch } = useQuery({
     queryKey: ['my-purchases'],
@@ -48,7 +53,7 @@ export default function DashboardPage() {
   const activePurchases = purchases.filter((p) => p.status === 'active');
   const expiredPurchases = purchases.filter((p) => p.status !== 'active');
 
-  if (authLoading) {
+  if (!isHydrated || authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
