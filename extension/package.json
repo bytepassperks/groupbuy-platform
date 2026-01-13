@@ -1,0 +1,12 @@
+{
+  "name": "groupbuy-extension",
+  "version": "1.0.0",
+  "description": "GroupBuy Platform Browser Extension",
+  "scripts": {
+    "build": "node build.js",
+    "build:prod": "node build.js --production"
+  },
+  "devDependencies": {
+    "javascript-obfuscator": "^4.1.1"
+  }
+}

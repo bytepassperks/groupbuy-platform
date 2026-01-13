@@ -71,3 +71,28 @@ export function hashToken(token: string): string {
 export function generateEncryptionKey(): string {
   return crypto.randomBytes(32).toString('hex');
 }
+
+// RSA encryption for secure credential transfer
+export function encryptWithPublicKey(data: string, publicKeyPem: string): string {
+  try {
+    const encrypted = crypto.publicEncrypt(
+      {
+        key: publicKeyPem,
+        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+        oaepHash: 'sha256',
+      },
+      Buffer.from(data, 'utf8')
+    );
+    return encrypted.toString('base64');
+  } catch (error) {
+    throw new Error('Failed to encrypt with public key');
+  }
+}
+
+// Generate a one-time token with expiration
+export function generateOneTimeToken(): { token: string; hash: string; expiresAt: Date } {
+  const token = crypto.randomBytes(32).toString('hex');
+  const hash = crypto.createHash('sha256').update(token).digest('hex');
+  const expiresAt = new Date(Date.now() + 30 * 1000); // 30 seconds expiration
+  return { token, hash, expiresAt };
+}

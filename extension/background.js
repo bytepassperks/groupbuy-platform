@@ -1,7 +1,10 @@
 const API_URL = 'http://165.22.2.0/api';
 
+// Security: Clear any sensitive data on extension install/update
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('[GroupBuy] Extension installed');
+  console.log('[GroupBuy] Extension installed/updated');
+  // Clear any cached credentials on install/update for security
+  chrome.storage.local.remove(['cachedCredentials']);
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {

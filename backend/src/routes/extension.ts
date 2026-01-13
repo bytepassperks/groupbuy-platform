@@ -1,9 +1,98 @@
 import express from 'express';
 import { db } from '../lib/db';
-import { decrypt, hashAccessCode, generateSecureToken, hashToken } from '../lib/encryption';
+import { decrypt, hashAccessCode, generateSecureToken, hashToken, generateOneTimeToken, encryptWithPublicKey } from '../lib/encryption';
 import { rateLimit } from '../lib/rate-limit';
 
 const router = express.Router();
+
+// In-memory store for one-time tokens (in production, use Redis)
+const oneTimeTokens = new Map<string, { expiresAt: Date; used: boolean; accessCodeHash: string }>();
+
+// Clean up expired tokens every minute
+setInterval(() => {
+  const now = new Date();
+  for (const [hash, data] of oneTimeTokens.entries()) {
+    if (data.expiresAt < now || data.used) {
+      oneTimeTokens.delete(hash);
+    }
+  }
+}, 60 * 1000);
+
+// In-memory store for device bindings (in production, use database)
+const deviceBindings = new Map<string, string>(); // accessCodeHash -> deviceFingerprint
+
+// Request a one-time token for secure credential fetching
+router.post('/request-token', async (req, res) => {
+  const { accessCode, deviceFingerprint } = req.body;
+
+  try {
+    const rateLimitKey = `extension-token:${req.ip}`;
+    const isLimited = await rateLimit(rateLimitKey, { max: 20, window: 60 });
+
+    if (isLimited) {
+      res.status(429).json({ error: 'Too many requests. Please try again later.' });
+      return;
+    }
+
+    if (!accessCode) {
+      res.status(400).json({ error: 'Access code is required' });
+      return;
+    }
+
+    if (!deviceFingerprint) {
+      res.status(400).json({ error: 'Device fingerprint is required' });
+      return;
+    }
+
+    const accessCodeHash = hashAccessCode(accessCode);
+
+    // Verify the access code is valid
+    const purchaseResult = await db.query(
+      `SELECT p.id FROM purchases p WHERE p.access_code_hash = $1 AND p.status = $2 AND p.expires_at > NOW()`,
+      [accessCodeHash, 'active']
+    );
+
+    if (purchaseResult.rows.length === 0) {
+      res.status(401).json({ error: 'Invalid or expired access code' });
+      return;
+    }
+
+    // Check device binding
+    const boundDevice = deviceBindings.get(accessCodeHash);
+    if (boundDevice && boundDevice !== deviceFingerprint) {
+      console.warn('Access code used from different device');
+      res.status(403).json({ 
+        error: 'This access code is bound to a different device. Contact support if you need to transfer it.' 
+      });
+      return;
+    }
+
+    // Bind device if not already bound
+    if (!boundDevice) {
+      deviceBindings.set(accessCodeHash, deviceFingerprint);
+      console.log('Device bound to access code');
+    }
+
+    // Generate one-time token
+    const { token, hash, expiresAt } = generateOneTimeToken();
+    
+    // Store token with access code hash for verification
+    oneTimeTokens.set(hash, { 
+      expiresAt, 
+      used: false, 
+      accessCodeHash 
+    });
+
+    res.json({
+      success: true,
+      token,
+      expiresIn: 30 // seconds
+    });
+  } catch (error) {
+    console.error('Error generating token:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 router.post('/verify-code', async (req, res) => {
   const { accessCode } = req.body;
@@ -204,6 +293,184 @@ router.post('/get-credentials', async (req, res) => {
     console.log('Credentials sent to extension');
   } catch (error: any) {
     console.error('Error in get-credentials:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Secure credential endpoint with one-time token and RSA encryption
+router.post('/get-credentials-secure', async (req, res) => {
+  const { oneTimeToken, publicKey, product, deviceFingerprint } = req.body;
+
+  try {
+    const rateLimitKey = `extension-creds-secure:${req.ip}`;
+    const isLimited = await rateLimit(rateLimitKey, { max: 10, window: 60 });
+
+    if (isLimited) {
+      res.status(429).json({ error: 'Too many requests. Please try again later.' });
+      return;
+    }
+
+    if (!oneTimeToken) {
+      res.status(400).json({ error: 'One-time token is required' });
+      return;
+    }
+
+    if (!publicKey) {
+      res.status(400).json({ error: 'Public key is required for secure transfer' });
+      return;
+    }
+
+    if (!deviceFingerprint) {
+      res.status(400).json({ error: 'Device fingerprint is required' });
+      return;
+    }
+
+    // Verify one-time token
+    const tokenHash = hashToken(oneTimeToken);
+    const tokenData = oneTimeTokens.get(tokenHash);
+
+    if (!tokenData) {
+      res.status(401).json({ error: 'Invalid or expired token' });
+      return;
+    }
+
+    if (tokenData.used) {
+      res.status(401).json({ error: 'Token has already been used' });
+      return;
+    }
+
+    if (new Date() > tokenData.expiresAt) {
+      oneTimeTokens.delete(tokenHash);
+      res.status(401).json({ error: 'Token has expired' });
+      return;
+    }
+
+    // Mark token as used immediately
+    tokenData.used = true;
+
+    // Verify device binding
+    const boundDevice = deviceBindings.get(tokenData.accessCodeHash);
+    if (boundDevice && boundDevice !== deviceFingerprint) {
+      res.status(403).json({ error: 'Device mismatch' });
+      return;
+    }
+
+    // Get purchase and credentials using the access code hash from the token
+    const purchaseResult = await db.query(
+      `SELECT p.*, prod.id as prod_id, prod.name as prod_name, prod.encrypted_email, 
+              prod.encrypted_password, prod.max_concurrent_users, prod.login_url
+       FROM purchases p
+       JOIN products prod ON p.product_id = prod.id
+       WHERE p.access_code_hash = $1 AND p.status = $2`,
+      [tokenData.accessCodeHash, 'active']
+    );
+
+    if (purchaseResult.rows.length === 0) {
+      res.status(401).json({ error: 'Invalid access' });
+      return;
+    }
+
+    const purchase = purchaseResult.rows[0];
+
+    if (new Date() > new Date(purchase.expires_at)) {
+      res.status(403).json({ error: 'Subscription expired' });
+      return;
+    }
+
+    // Check concurrent users
+    const activeSessions = await db.query(
+      `SELECT COUNT(*) as count FROM access_logs
+       WHERE product_id = $1 AND logout_time IS NULL
+       AND login_time > NOW() - INTERVAL '24 hours'`,
+      [purchase.prod_id]
+    );
+
+    const currentUsers = parseInt(activeSessions.rows[0]?.count || '0', 10);
+
+    if (currentUsers >= purchase.max_concurrent_users) {
+      res.status(403).json({
+        error: `Maximum concurrent users (${purchase.max_concurrent_users}) reached.`
+      });
+      return;
+    }
+
+    // Decrypt credentials
+    const email = decrypt(purchase.encrypted_email);
+    const password = decrypt(purchase.encrypted_password);
+
+    if (!email || !password) {
+      throw new Error('Failed to decrypt credentials');
+    }
+
+    // Encrypt credentials with client's public key
+    const credentialsPayload = JSON.stringify({
+      email,
+      password,
+      timestamp: Date.now(),
+      nonce: generateSecureToken(16)
+    });
+
+    let encryptedCredentials: string;
+    try {
+      encryptedCredentials = encryptWithPublicKey(credentialsPayload, publicKey);
+    } catch (error) {
+      res.status(400).json({ error: 'Invalid public key format' });
+      return;
+    }
+
+    // Create session token
+    const sessionToken = generateSecureToken(32);
+    const sessionTokenHash = hashToken(sessionToken);
+
+    await db.query(
+      `INSERT INTO session_tokens
+       (user_id, purchase_id, product_id, token, token_hash, device_fingerprint, ip_address, user_agent, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        purchase.user_id,
+        purchase.id,
+        purchase.prod_id,
+        sessionToken,
+        sessionTokenHash,
+        deviceFingerprint,
+        req.ip,
+        req.headers['user-agent'],
+        new Date(Date.now() + 24 * 60 * 60 * 1000)
+      ]
+    );
+
+    // Log access
+    await db.query(
+      `INSERT INTO access_logs
+       (user_id, product_id, purchase_id, action, ip_address, device_fingerprint, login_time, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        purchase.user_id,
+        purchase.prod_id,
+        purchase.id,
+        'secure_login_attempted',
+        req.ip,
+        deviceFingerprint,
+        new Date(),
+        'success'
+      ]
+    );
+
+    // Clean up used token
+    oneTimeTokens.delete(tokenHash);
+
+    res.json({
+      success: true,
+      encryptedCredentials,
+      productName: purchase.prod_name,
+      loginUrl: purchase.login_url,
+      sessionToken,
+      expiresAt: purchase.expires_at
+    });
+
+    console.log('Secure credentials sent (encrypted)');
+  } catch (error: any) {
+    console.error('Error in get-credentials-secure:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });

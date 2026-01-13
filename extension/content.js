@@ -1,5 +1,37 @@
 const API_URL = 'http://165.22.2.0/api';
 
+// RSA key generation for secure credential transfer
+async function generateRSAKeyPair() {
+  const keyPair = await crypto.subtle.generateKey(
+    {
+      name: 'RSA-OAEP',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-256',
+    },
+    true,
+    ['encrypt', 'decrypt']
+  );
+  return keyPair;
+}
+
+async function exportPublicKeyToPEM(publicKey) {
+  const exported = await crypto.subtle.exportKey('spki', publicKey);
+  const exportedAsBase64 = btoa(String.fromCharCode(...new Uint8Array(exported)));
+  const pemExported = `-----BEGIN PUBLIC KEY-----\n${exportedAsBase64.match(/.{1,64}/g).join('\n')}\n-----END PUBLIC KEY-----`;
+  return pemExported;
+}
+
+async function decryptWithPrivateKey(encryptedBase64, privateKey) {
+  const encryptedData = Uint8Array.from(atob(encryptedBase64), c => c.charCodeAt(0));
+  const decrypted = await crypto.subtle.decrypt(
+    { name: 'RSA-OAEP' },
+    privateKey,
+    encryptedData
+  );
+  return new TextDecoder().decode(decrypted);
+}
+
 const LOGIN_SELECTORS = {
   'semrush.com': {
     emailField: 'input[name="email"], input[type="email"]',
@@ -232,7 +264,7 @@ async function getDeviceFingerprint() {
 
 async function fetchCredentialsAndLogin(hostname, selectors) {
   try {
-    console.log('[GroupBuy] Fetching credentials from backend...');
+    console.log('[GroupBuy] Starting secure credential fetch...');
     
     const stored = await chrome.storage.local.get(['accessCode']);
     
@@ -243,29 +275,74 @@ async function fetchCredentialsAndLogin(hostname, selectors) {
 
     const deviceFingerprint = await getDeviceFingerprint();
 
-    const response = await fetch(`${API_URL}/extension/get-credentials`, {
+    // Step 1: Request a one-time token
+    console.log('[GroupBuy] Requesting one-time token...');
+    const tokenResponse = await fetch(`${API_URL}/extension/request-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         accessCode: stored.accessCode,
+        deviceFingerprint,
+      }),
+    });
+
+    const tokenData = await tokenResponse.json();
+
+    if (!tokenResponse.ok) {
+      console.error('[GroupBuy] Failed to get token:', tokenData.error);
+      return false;
+    }
+
+    // Step 2: Generate RSA key pair for secure transfer
+    console.log('[GroupBuy] Generating encryption keys...');
+    const keyPair = await generateRSAKeyPair();
+    const publicKeyPem = await exportPublicKeyToPEM(keyPair.publicKey);
+
+    // Step 3: Request encrypted credentials using one-time token
+    console.log('[GroupBuy] Fetching encrypted credentials...');
+    const credResponse = await fetch(`${API_URL}/extension/get-credentials-secure`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        oneTimeToken: tokenData.token,
+        publicKey: publicKeyPem,
         product: hostname,
         deviceFingerprint,
       }),
     });
 
-    const data = await response.json();
+    const credData = await credResponse.json();
 
-    if (!response.ok) {
-      console.error('[GroupBuy] Failed to get credentials:', data.error);
+    if (!credResponse.ok) {
+      console.error('[GroupBuy] Failed to get credentials:', credData.error);
       return false;
     }
 
-    console.log('[GroupBuy] Credentials received, performing auto-login...');
+    // Step 4: Decrypt credentials using private key
+    console.log('[GroupBuy] Decrypting credentials...');
+    const decryptedJson = await decryptWithPrivateKey(credData.encryptedCredentials, keyPair.privateKey);
+    const credentials = JSON.parse(decryptedJson);
 
-    const success = await performLogin(data.credentials, selectors);
+    // Verify timestamp to prevent replay attacks (allow 60 second window)
+    if (Date.now() - credentials.timestamp > 60000) {
+      console.error('[GroupBuy] Credentials expired');
+      return false;
+    }
+
+    console.log('[GroupBuy] Credentials decrypted, performing auto-login...');
+
+    // Step 5: Perform login with decrypted credentials
+    const success = await performLogin(credentials, selectors);
+
+    // Step 6: Clear credentials from memory immediately
+    credentials.email = null;
+    credentials.password = null;
 
     if (success) {
       console.log('[GroupBuy] Auto-login successful!');
+      
+      // Store session token for logout tracking
+      await chrome.storage.local.set({ sessionToken: credData.sessionToken });
       
       await fetch(`${API_URL}/extension/log-access`, {
         method: 'POST',
@@ -281,7 +358,7 @@ async function fetchCredentialsAndLogin(hostname, selectors) {
 
     return success;
   } catch (error) {
-    console.error('[GroupBuy] Error fetching credentials:', error);
+    console.error('[GroupBuy] Error in secure credential fetch:', error);
     return false;
   }
 }
