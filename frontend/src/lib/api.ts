@@ -123,40 +123,34 @@ export const adminApi = {
       name: string;
       category: string;
       price: number;
-      email: string;
-      password: string;
       maxUsers?: number;
+      serviceUrl?: string;
       loginUrl?: string;
       description?: string;
       iconUrl?: string;
-      twoFaCodes?: string;
-      emailSelector?: string;
-      passwordSelector?: string;
-      submitSelector?: string;
-      loginPageIndicator?: string;
+      sessionCookies?: any;
+      sessionExpiresAt?: string;
+      renewalPeriod?: string;
     }) => api.post('/admin/products/add', data),
     
     update: (id: number, data: Partial<{
       name: string;
       category: string;
       price: number;
-      email: string;
-      password: string;
       maxUsers: number;
+      serviceUrl: string;
       loginUrl: string;
       description: string;
       iconUrl: string;
       status: string;
-      twoFaCodes: string;
-      emailSelector: string;
-      passwordSelector: string;
-      submitSelector: string;
-      loginPageIndicator: string;
+      sessionCookies: any;
+      sessionExpiresAt: string;
+      renewalPeriod: string;
     }>) => api.put(`/admin/products/${id}`, data),
     
     delete: (id: number) => api.delete(`/admin/products/${id}`),
     
-    getCredentials: (id: number) => api.get(`/admin/products/${id}/credentials`),
+    getSession: (id: number) => api.get(`/admin/products/${id}/session`),
   },
   
   users: {

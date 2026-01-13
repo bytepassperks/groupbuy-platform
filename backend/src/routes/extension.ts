@@ -168,8 +168,8 @@ router.post('/get-credentials', async (req, res) => {
     const accessCodeHash = hashAccessCode(accessCode);
 
     const purchaseResult = await db.query(
-      `SELECT p.*, prod.id as prod_id, prod.name as prod_name, prod.encrypted_email, 
-              prod.encrypted_password, prod.max_concurrent_users, prod.login_url
+      `SELECT p.*, prod.id as prod_id, prod.name as prod_name, prod.encrypted_session_cookies, 
+              prod.session_expires_at, prod.max_concurrent_users, prod.service_url, prod.login_url, prod.login_domain
        FROM purchases p
        JOIN products prod ON p.product_id = prod.id
        WHERE p.access_code_hash = $1 AND p.status = $2`,
@@ -192,21 +192,26 @@ router.post('/get-credentials', async (req, res) => {
 
     if (product) {
       const productMatch = purchase.login_url?.includes(product) || 
+                          purchase.service_url?.includes(product) ||
+                          purchase.login_domain?.includes(product) ||
                           purchase.prod_name.toLowerCase().includes(product.toLowerCase());
       if (!productMatch) {
         const otherPurchase = await db.query(
-          `SELECT p.*, prod.encrypted_email, prod.encrypted_password, prod.login_url, prod.name as prod_name
+          `SELECT p.*, prod.encrypted_session_cookies, prod.session_expires_at, prod.service_url, prod.login_url, prod.login_domain, prod.name as prod_name
            FROM purchases p
            JOIN products prod ON p.product_id = prod.id
            WHERE p.user_id = $1 AND p.status = $2 AND p.expires_at > NOW()
-           AND (prod.login_url ILIKE $3 OR prod.name ILIKE $3)`,
+           AND (prod.login_url ILIKE $3 OR prod.service_url ILIKE $3 OR prod.login_domain ILIKE $3 OR prod.name ILIKE $3)`,
           [purchase.user_id, 'active', `%${product}%`]
         );
 
         if (otherPurchase.rows.length > 0) {
           const other = otherPurchase.rows[0];
-          purchase.encrypted_email = other.encrypted_email;
-          purchase.encrypted_password = other.encrypted_password;
+          purchase.encrypted_session_cookies = other.encrypted_session_cookies;
+          purchase.session_expires_at = other.session_expires_at;
+          purchase.service_url = other.service_url;
+          purchase.login_url = other.login_url;
+          purchase.login_domain = other.login_domain;
           purchase.prod_name = other.prod_name;
           purchase.prod_id = other.product_id;
           purchase.id = other.id;
@@ -231,16 +236,31 @@ router.post('/get-credentials', async (req, res) => {
       return;
     }
 
-    console.log('Decrypting credentials...');
-
-    const email = decrypt(purchase.encrypted_email);
-    const password = decrypt(purchase.encrypted_password);
-
-    if (!email || !password) {
-      throw new Error('Failed to decrypt credentials');
+    // Check if session cookies are configured
+    if (!purchase.encrypted_session_cookies) {
+      res.status(404).json({ error: 'Session cookies not configured for this product. Please contact admin.' });
+      return;
     }
 
-    console.log('Credentials decrypted successfully');
+    // Check if session has expired
+    if (purchase.session_expires_at && new Date() > new Date(purchase.session_expires_at)) {
+      res.status(403).json({ error: 'Product session has expired. Please contact admin to refresh.' });
+      return;
+    }
+
+    console.log('Decrypting session cookies...');
+
+    let sessionCookies;
+    try {
+      const decrypted = decrypt(purchase.encrypted_session_cookies);
+      sessionCookies = JSON.parse(decrypted);
+    } catch (e) {
+      console.error('Failed to decrypt session cookies:', e);
+      res.status(500).json({ error: 'Failed to decrypt session cookies' });
+      return;
+    }
+
+    console.log('Session cookies decrypted successfully');
 
     const sessionToken = generateSecureToken(32);
     const sessionTokenHash = hashToken(sessionToken);
@@ -270,7 +290,7 @@ router.post('/get-credentials', async (req, res) => {
         purchase.user_id,
         purchase.prod_id,
         purchase.id,
-        'login_attempted',
+        'session_access',
         req.ip,
         deviceFingerprint || null,
         new Date(),
@@ -280,17 +300,17 @@ router.post('/get-credentials', async (req, res) => {
 
     res.json({
       success: true,
-      credentials: {
-        email: email,
-        password: password,
-        productName: purchase.prod_name,
-        expiresAt: purchase.expires_at
-      },
+      sessionCookies: sessionCookies,
+      productName: purchase.prod_name,
+      serviceUrl: purchase.service_url,
       loginUrl: purchase.login_url,
+      loginDomain: purchase.login_domain,
+      sessionExpiresAt: purchase.session_expires_at,
+      purchaseExpiresAt: purchase.expires_at,
       sessionToken: sessionToken
     });
 
-    console.log('Credentials sent to extension');
+    console.log('Session cookies sent to extension');
   } catch (error: any) {
     console.error('Error in get-credentials:', error);
     res.status(500).json({ error: 'Server error' });
@@ -355,10 +375,10 @@ router.post('/get-credentials-secure', async (req, res) => {
       return;
     }
 
-    // Get purchase and credentials using the access code hash from the token
+    // Get purchase and session cookies using the access code hash from the token
     const purchaseResult = await db.query(
-      `SELECT p.*, prod.id as prod_id, prod.name as prod_name, prod.encrypted_email, 
-              prod.encrypted_password, prod.max_concurrent_users, prod.login_url
+      `SELECT p.*, prod.id as prod_id, prod.name as prod_name, prod.encrypted_session_cookies, 
+              prod.session_expires_at, prod.max_concurrent_users, prod.service_url, prod.login_url, prod.login_domain
        FROM purchases p
        JOIN products prod ON p.product_id = prod.id
        WHERE p.access_code_hash = $1 AND p.status = $2`,
@@ -394,25 +414,42 @@ router.post('/get-credentials-secure', async (req, res) => {
       return;
     }
 
-    // Decrypt credentials
-    const email = decrypt(purchase.encrypted_email);
-    const password = decrypt(purchase.encrypted_password);
-
-    if (!email || !password) {
-      throw new Error('Failed to decrypt credentials');
+    // Check if session cookies are configured
+    if (!purchase.encrypted_session_cookies) {
+      res.status(404).json({ error: 'Session cookies not configured for this product.' });
+      return;
     }
 
-    // Encrypt credentials with client's public key
-    const credentialsPayload = JSON.stringify({
-      email,
-      password,
+    // Check if session has expired
+    if (purchase.session_expires_at && new Date() > new Date(purchase.session_expires_at)) {
+      res.status(403).json({ error: 'Product session has expired. Please contact admin.' });
+      return;
+    }
+
+    // Decrypt session cookies
+    let sessionCookies;
+    try {
+      const decrypted = decrypt(purchase.encrypted_session_cookies);
+      sessionCookies = JSON.parse(decrypted);
+    } catch (e) {
+      console.error('Failed to decrypt session cookies:', e);
+      res.status(500).json({ error: 'Failed to decrypt session cookies' });
+      return;
+    }
+
+    // Encrypt session cookies with client's public key
+    const cookiesPayload = JSON.stringify({
+      sessionCookies,
+      serviceUrl: purchase.service_url,
+      loginUrl: purchase.login_url,
+      loginDomain: purchase.login_domain,
       timestamp: Date.now(),
       nonce: generateSecureToken(16)
     });
 
-    let encryptedCredentials: string;
+    let encryptedCookies: string;
     try {
-      encryptedCredentials = encryptWithPublicKey(credentialsPayload, publicKey);
+      encryptedCookies = encryptWithPublicKey(cookiesPayload, publicKey);
     } catch (error) {
       res.status(400).json({ error: 'Invalid public key format' });
       return;
@@ -448,7 +485,7 @@ router.post('/get-credentials-secure', async (req, res) => {
         purchase.user_id,
         purchase.prod_id,
         purchase.id,
-        'secure_login_attempted',
+        'secure_session_access',
         req.ip,
         deviceFingerprint,
         new Date(),
@@ -461,14 +498,17 @@ router.post('/get-credentials-secure', async (req, res) => {
 
     res.json({
       success: true,
-      encryptedCredentials,
+      encryptedCookies,
       productName: purchase.prod_name,
+      serviceUrl: purchase.service_url,
       loginUrl: purchase.login_url,
+      loginDomain: purchase.login_domain,
       sessionToken,
-      expiresAt: purchase.expires_at
+      sessionExpiresAt: purchase.session_expires_at,
+      purchaseExpiresAt: purchase.expires_at
     });
 
-    console.log('Secure credentials sent (encrypted)');
+    console.log('Secure session cookies sent (encrypted)');
   } catch (error: any) {
     console.error('Error in get-credentials-secure:', error);
     res.status(500).json({ error: 'Server error' });

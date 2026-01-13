@@ -68,6 +68,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // Handle session cookies fetch and injection
+  if (message.type === 'FETCH_SESSION_COOKIES') {
+    handleFetchSessionCookies(message)
+      .then(sendResponse)
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  // Handle cookie injection
+  if (message.type === 'INJECT_COOKIES') {
+    handleInjectCookies(message)
+      .then(sendResponse)
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
   // Handle one-time token request from content script
   if (message.type === 'REQUEST_TOKEN') {
     handleRequestToken(message)
@@ -313,4 +329,107 @@ async function handleLogAccessFromContent(message) {
   }
 
   return { success: true };
+}
+
+// Handler for fetching session cookies from backend
+async function handleFetchSessionCookies(message) {
+  const stored = await chrome.storage.local.get(['accessCode']);
+  
+  if (!stored.accessCode) {
+    throw new Error('No access code stored');
+  }
+
+  console.log('[GroupBuy Background] Fetching session cookies...');
+  
+  const response = await fetch(`${API_URL}/extension/get-credentials`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      accessCode: stored.accessCode,
+      product: message.product,
+      deviceFingerprint: message.deviceFingerprint,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to get session cookies');
+  }
+
+  // Store session token
+  if (data.sessionToken) {
+    await chrome.storage.local.set({
+      sessionToken: data.sessionToken,
+      currentProduct: message.product,
+    });
+  }
+
+  return { 
+    success: true, 
+    sessionCookies: data.sessionCookies,
+    serviceUrl: data.serviceUrl,
+    loginUrl: data.loginUrl,
+    loginDomain: data.loginDomain,
+    sessionToken: data.sessionToken,
+    productName: data.productName,
+  };
+}
+
+// Handler for injecting cookies into the browser
+async function handleInjectCookies(message) {
+  const { cookies, domain } = message;
+  
+  if (!cookies || !Array.isArray(cookies)) {
+    throw new Error('Invalid cookies format');
+  }
+
+  console.log('[GroupBuy Background] Injecting', cookies.length, 'cookies for domain:', domain);
+  
+  const results = [];
+  
+  for (const cookie of cookies) {
+    try {
+      // Construct the URL for the cookie
+      const protocol = cookie.secure ? 'https' : 'http';
+      const cookieDomain = cookie.domain || domain;
+      const url = `${protocol}://${cookieDomain.replace(/^\./, '')}${cookie.path || '/'}`;
+      
+      const cookieDetails = {
+        url: url,
+        name: cookie.name,
+        value: cookie.value,
+        domain: cookieDomain,
+        path: cookie.path || '/',
+        secure: cookie.secure || false,
+        httpOnly: cookie.httpOnly || false,
+        sameSite: cookie.sameSite || 'lax',
+      };
+      
+      // Set expiration if provided
+      if (cookie.expirationDate) {
+        cookieDetails.expirationDate = cookie.expirationDate;
+      } else {
+        // Default to 30 days from now
+        cookieDetails.expirationDate = Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60);
+      }
+      
+      await chrome.cookies.set(cookieDetails);
+      results.push({ name: cookie.name, success: true });
+      console.log('[GroupBuy Background] Cookie set:', cookie.name);
+    } catch (error) {
+      console.error('[GroupBuy Background] Failed to set cookie:', cookie.name, error);
+      results.push({ name: cookie.name, success: false, error: error.message });
+    }
+  }
+  
+  const successCount = results.filter(r => r.success).length;
+  console.log('[GroupBuy Background] Injected', successCount, 'of', cookies.length, 'cookies');
+  
+  return { 
+    success: successCount > 0, 
+    results,
+    injectedCount: successCount,
+    totalCount: cookies.length,
+  };
 }

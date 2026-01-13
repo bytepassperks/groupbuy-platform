@@ -312,9 +312,9 @@ async function getDeviceFingerprint() {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function fetchCredentialsAndLogin(hostname, selectors) {
+async function fetchSessionCookiesAndInject(hostname) {
   try {
-    console.log('[GroupBuy] Starting secure credential fetch...');
+    console.log('[GroupBuy] Starting session cookie injection...');
     
     const stored = await chrome.storage.local.get(['accessCode']);
     
@@ -325,78 +325,72 @@ async function fetchCredentialsAndLogin(hostname, selectors) {
 
     const deviceFingerprint = await getDeviceFingerprint();
 
-    // Step 1: Request a one-time token via background script (bypasses Mixed Content)
-    console.log('[GroupBuy] Requesting one-time token via background script...');
-    const tokenResponse = await chrome.runtime.sendMessage({
-      type: 'REQUEST_TOKEN',
-      deviceFingerprint,
-    });
-
-    if (!tokenResponse || !tokenResponse.success) {
-      console.error('[GroupBuy] Failed to get token:', tokenResponse?.error || 'Unknown error');
-      return false;
-    }
-
-    // Step 2: Generate RSA key pair for secure transfer
-    console.log('[GroupBuy] Generating encryption keys...');
-    const keyPair = await generateRSAKeyPair();
-    const publicKeyPem = await exportPublicKeyToPEM(keyPair.publicKey);
-
-    // Step 3: Request encrypted credentials via background script (bypasses Mixed Content)
-    console.log('[GroupBuy] Fetching encrypted credentials via background script...');
-    const credResponse = await chrome.runtime.sendMessage({
-      type: 'FETCH_CREDENTIALS_SECURE',
-      oneTimeToken: tokenResponse.token,
-      publicKey: publicKeyPem,
+    // Step 1: Fetch session cookies via background script
+    console.log('[GroupBuy] Fetching session cookies via background script...');
+    const cookieResponse = await chrome.runtime.sendMessage({
+      type: 'FETCH_SESSION_COOKIES',
       product: hostname,
       deviceFingerprint,
     });
 
-    if (!credResponse || !credResponse.success) {
-      console.error('[GroupBuy] Failed to get credentials:', credResponse?.error || 'Unknown error');
+    if (!cookieResponse || !cookieResponse.success) {
+      console.error('[GroupBuy] Failed to get session cookies:', cookieResponse?.error || 'Unknown error');
       return false;
     }
 
-    // Step 4: Decrypt credentials using private key
-    console.log('[GroupBuy] Decrypting credentials...');
-    const decryptedJson = await decryptWithPrivateKey(credResponse.encryptedCredentials, keyPair.privateKey);
-    const credentials = JSON.parse(decryptedJson);
+    const { sessionCookies, serviceUrl, loginDomain, productName } = cookieResponse;
 
-    // Verify timestamp to prevent replay attacks (allow 60 second window)
-    if (Date.now() - credentials.timestamp > 60000) {
-      console.error('[GroupBuy] Credentials expired');
+    if (!sessionCookies || !Array.isArray(sessionCookies) || sessionCookies.length === 0) {
+      console.error('[GroupBuy] No session cookies available for this product');
       return false;
     }
 
-    console.log('[GroupBuy] Credentials decrypted, performing auto-login...');
+    console.log('[GroupBuy] Got', sessionCookies.length, 'session cookies for', productName);
 
-    // Step 5: Perform login with decrypted credentials
-    const success = await performLogin(credentials, selectors);
+    // Step 2: Inject cookies via background script (chrome.cookies.set requires background)
+    console.log('[GroupBuy] Injecting cookies...');
+    const injectResponse = await chrome.runtime.sendMessage({
+      type: 'INJECT_COOKIES',
+      cookies: sessionCookies,
+      domain: loginDomain || hostname,
+    });
 
-    // Step 6: Clear credentials from memory immediately
-    credentials.email = null;
-    credentials.password = null;
-
-    if (success) {
-      console.log('[GroupBuy] Auto-login successful!');
-      
-      // Store session token for logout tracking
-      await chrome.storage.local.set({ sessionToken: credResponse.sessionToken });
-      
-      // Log access via background script (bypasses Mixed Content)
-      await chrome.runtime.sendMessage({
-        type: 'LOG_ACCESS_FROM_CONTENT',
-        action: 'login_success',
-        product: hostname,
-        deviceFingerprint,
-      });
+    if (!injectResponse || !injectResponse.success) {
+      console.error('[GroupBuy] Failed to inject cookies:', injectResponse?.error || 'Unknown error');
+      return false;
     }
 
-    return success;
+    console.log('[GroupBuy] Successfully injected', injectResponse.injectedCount, 'of', injectResponse.totalCount, 'cookies');
+
+    // Step 3: Log access
+    await chrome.runtime.sendMessage({
+      type: 'LOG_ACCESS_FROM_CONTENT',
+      action: 'session_injected',
+      product: hostname,
+      deviceFingerprint,
+    });
+
+    // Step 4: Redirect to service URL if available
+    if (serviceUrl) {
+      console.log('[GroupBuy] Redirecting to service URL:', serviceUrl);
+      window.location.href = serviceUrl;
+    } else {
+      // Reload the page to apply cookies
+      console.log('[GroupBuy] Reloading page to apply cookies...');
+      window.location.reload();
+    }
+
+    return true;
   } catch (error) {
-    console.error('[GroupBuy] Error in secure credential fetch:', error);
+    console.error('[GroupBuy] Error in session cookie injection:', error);
     return false;
   }
+}
+
+// Legacy function for backward compatibility (credential-based login)
+async function fetchCredentialsAndLogin(hostname, selectors) {
+  // Now redirects to session-based approach
+  return fetchSessionCookiesAndInject(hostname);
 }
 
 (async function() {
@@ -405,54 +399,47 @@ async function fetchCredentialsAndLogin(hostname, selectors) {
 
   console.log('[GroupBuy] Extension loaded on', hostname);
 
+  // Wait for page to fully load
   await new Promise(resolve => setTimeout(resolve, 1000));
 
+  // Try to click cookie consent buttons
   clickCookieButtons();
 
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  await new Promise(resolve => setTimeout(resolve, 500));
 
-  // Get selectors dynamically (either from hardcoded list or backend)
-  const selectorResult = await getSelectorsForHostname(hostname);
+  // Check if we have an access code stored
+  const stored = await chrome.storage.local.get(['accessCode', 'autoLoginEnabled']);
   
-  if (!selectorResult) {
-    console.log('[GroupBuy] No configuration found for', hostname);
+  if (!stored.accessCode) {
+    console.log('[GroupBuy] No access code stored. Please enter your access code in the extension popup.');
     return;
   }
-  
-  const { selectors, matchedDomain } = selectorResult;
-  console.log('[GroupBuy] Using selectors for', matchedDomain);
+
+  if (stored.autoLoginEnabled === false) {
+    console.log('[GroupBuy] Auto-login is disabled');
+    return;
+  }
+
+  // Check if this domain is supported by fetching from backend
+  console.log('[GroupBuy] Checking if domain is supported:', hostname);
   
   try {
-    const emailField = await waitForElement(selectors.emailField, 5000);
-    const passwordField = await waitForElement(selectors.passwordField, 5000);
-    
-    if (isInOverlay(emailField) || isInOverlay(passwordField)) {
-      console.log('[GroupBuy] Login fields are in an overlay (cookie banner, popup), skipping');
+    const response = await chrome.runtime.sendMessage({
+      type: 'FETCH_SELECTORS',
+      domain: hostname,
+    });
+
+    if (!response || !response.supported) {
+      console.log('[GroupBuy] Domain not supported:', hostname);
       return;
     }
 
-    const form = emailField.closest('form');
-    if (!form) {
-      console.log('[GroupBuy] Warning: Email field is not inside a form element');
-    }
+    console.log('[GroupBuy] Domain supported, product:', response.productName);
 
-    console.log('[GroupBuy] Login page detected on', matchedDomain);
-
-    const stored = await chrome.storage.local.get(['accessCode', 'autoLoginEnabled']);
-    
-    if (!stored.accessCode) {
-      console.log('[GroupBuy] No access code stored. Please enter your access code in the extension popup.');
-      return;
-    }
-
-    if (stored.autoLoginEnabled === false) {
-      console.log('[GroupBuy] Auto-login is disabled');
-      return;
-    }
-
-    await fetchCredentialsAndLogin(matchedDomain, selectors);
+    // Use session-based cookie injection
+    await fetchSessionCookiesAndInject(hostname);
     
   } catch (error) {
-    console.log('[GroupBuy] Login form not found:', error.message);
+    console.log('[GroupBuy] Error checking domain support:', error.message);
   }
 })();

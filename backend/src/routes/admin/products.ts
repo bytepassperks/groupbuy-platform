@@ -7,11 +7,11 @@ import { AuthenticatedRequest, Product } from '../../types';
 const router = express.Router();
 
 router.post('/add', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res: Response) => {
-  const { name, category, price, email, password, maxUsers, loginUrl, description, iconUrl, twoFaCodes, emailSelector, passwordSelector, submitSelector, loginPageIndicator } = req.body;
+  const { name, category, price, maxUsers, serviceUrl, loginUrl, description, iconUrl, sessionCookies, sessionExpiresAt, renewalPeriod } = req.body;
 
   try {
-    if (!name || !category || !price || !email || !password) {
-      res.status(400).json({ error: 'Name, category, price, email, and password are required' });
+    if (!name || !category || !price) {
+      res.status(400).json({ error: 'Name, category, and price are required' });
       return;
     }
 
@@ -25,21 +25,20 @@ router.post('/add', authMiddleware, adminOnly, async (req: AuthenticatedRequest,
       return;
     }
 
-    console.log('Encrypting credentials...');
-    const encryptedEmail = encrypt(email);
-    const encryptedPassword = encrypt(password);
-    const encrypted2faCodes = twoFaCodes ? encrypt(twoFaCodes) : null;
+    // Encrypt session cookies if provided
+    const encryptedSessionCookies = sessionCookies ? encrypt(JSON.stringify(sessionCookies)) : null;
 
     const slug = name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '');
 
-    // Extract domain from login URL for easier lookup
+    // Extract domain from service URL or login URL for easier lookup
     let loginDomain = null;
-    if (loginUrl) {
+    const urlToUse = serviceUrl || loginUrl;
+    if (urlToUse) {
       try {
-        const url = new URL(loginUrl);
+        const url = new URL(urlToUse);
         loginDomain = url.hostname;
       } catch (e) {
         // Invalid URL, skip domain extraction
@@ -48,25 +47,24 @@ router.post('/add', authMiddleware, adminOnly, async (req: AuthenticatedRequest,
 
     const result = await db.query<Product>(
       `INSERT INTO products
-       (name, slug, category, price, encrypted_email, encrypted_password, encrypted_2fa_codes,
-        max_concurrent_users, login_url, login_domain, email_selector, password_selector, submit_selector, login_page_indicator, description, icon_url, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-       RETURNING id, name, slug, category, price, max_concurrent_users, login_url, login_domain, email_selector, password_selector, submit_selector, login_page_indicator, status, created_at`,
+       (name, slug, category, price, renewal_period, max_concurrent_users, service_url, login_url, login_domain,
+        encrypted_session_cookies, session_expires_at, session_last_updated, description, icon_url, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       RETURNING id, name, slug, category, price, renewal_period, max_concurrent_users, service_url, login_url, login_domain,
+                 session_expires_at, session_last_updated, status, created_at`,
       [
         name,
         slug,
         category,
         price,
-        encryptedEmail,
-        encryptedPassword,
-        encrypted2faCodes,
+        renewalPeriod || 'month',
         maxUsers || 5,
+        serviceUrl || null,
         loginUrl || null,
         loginDomain,
-        emailSelector || null,
-        passwordSelector || null,
-        submitSelector || null,
-        loginPageIndicator || null,
+        encryptedSessionCookies,
+        sessionExpiresAt ? new Date(sessionExpiresAt) : null,
+        sessionCookies ? new Date() : null,
         description || null,
         iconUrl || null,
         'active'
@@ -108,8 +106,11 @@ router.post('/add', authMiddleware, adminOnly, async (req: AuthenticatedRequest,
         slug: product.slug,
         category: product.category,
         price: product.price,
+        renewalPeriod: product.renewal_period,
         maxConcurrentUsers: product.max_concurrent_users,
+        serviceUrl: product.service_url,
         loginUrl: product.login_url,
+        sessionExpiresAt: product.session_expires_at,
         status: product.status,
       }
     });
@@ -126,9 +127,8 @@ router.get('/', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res
     
     let query = `
       SELECT id, name, slug, category, icon_url, description, price, renewal_period,
-             max_concurrent_users, current_concurrent_users, login_url, login_domain,
-             email_selector, password_selector, submit_selector, login_page_indicator,
-             status, created_at, updated_at
+             max_concurrent_users, current_concurrent_users, service_url, login_url, login_domain,
+             session_expires_at, session_last_updated, status, created_at, updated_at
       FROM products
       WHERE 1=1
     `;
@@ -189,9 +189,8 @@ router.get('/:id', authMiddleware, adminOnly, async (req: AuthenticatedRequest, 
   try {
     const result = await db.query<Product>(
       `SELECT id, name, slug, category, icon_url, description, price, renewal_period,
-              max_concurrent_users, current_concurrent_users, login_url, login_domain,
-              email_selector, password_selector, submit_selector, login_page_indicator,
-              status, created_at, updated_at
+              max_concurrent_users, current_concurrent_users, service_url, login_url, login_domain,
+              session_expires_at, session_last_updated, status, created_at, updated_at
        FROM products WHERE id = $1`,
       [id]
     );
@@ -207,8 +206,14 @@ router.get('/:id', authMiddleware, adminOnly, async (req: AuthenticatedRequest, 
       [id, 'active']
     );
 
+    // Check if session is expired
+    const sessionExpired = product.session_expires_at && new Date(product.session_expires_at) < new Date();
+
     res.json({
-      product,
+      product: {
+        ...product,
+        sessionExpired,
+      },
       activePurchases: parseInt(purchaseCount.rows[0]?.count || '0', 10),
     });
   } catch (error) {
@@ -219,7 +224,7 @@ router.get('/:id', authMiddleware, adminOnly, async (req: AuthenticatedRequest, 
 
 router.put('/:id', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
-  const { name, category, price, email, password, maxUsers, loginUrl, description, iconUrl, status, twoFaCodes, emailSelector, passwordSelector, submitSelector, loginPageIndicator } = req.body;
+  const { name, category, price, maxUsers, serviceUrl, loginUrl, description, iconUrl, status, sessionCookies, sessionExpiresAt, renewalPeriod } = req.body;
 
   try {
     const existingResult = await db.query<Product>(
@@ -260,21 +265,9 @@ router.put('/:id', authMiddleware, adminOnly, async (req: AuthenticatedRequest, 
       paramIndex++;
     }
 
-    if (email !== undefined) {
-      updates.push(`encrypted_email = $${paramIndex}`);
-      params.push(encrypt(email));
-      paramIndex++;
-    }
-
-    if (password !== undefined) {
-      updates.push(`encrypted_password = $${paramIndex}`);
-      params.push(encrypt(password));
-      paramIndex++;
-    }
-
-    if (twoFaCodes !== undefined) {
-      updates.push(`encrypted_2fa_codes = $${paramIndex}`);
-      params.push(twoFaCodes ? encrypt(twoFaCodes) : null);
+    if (renewalPeriod !== undefined) {
+      updates.push(`renewal_period = $${paramIndex}`);
+      params.push(renewalPeriod);
       paramIndex++;
     }
 
@@ -284,9 +277,15 @@ router.put('/:id', authMiddleware, adminOnly, async (req: AuthenticatedRequest, 
       paramIndex++;
     }
 
+    if (serviceUrl !== undefined) {
+      updates.push(`service_url = $${paramIndex}`);
+      params.push(serviceUrl || null);
+      paramIndex++;
+    }
+
     if (loginUrl !== undefined) {
       updates.push(`login_url = $${paramIndex}`);
-      params.push(loginUrl);
+      params.push(loginUrl || null);
       paramIndex++;
     }
 
@@ -308,36 +307,34 @@ router.put('/:id', authMiddleware, adminOnly, async (req: AuthenticatedRequest, 
       paramIndex++;
     }
 
-    if (emailSelector !== undefined) {
-      updates.push(`email_selector = $${paramIndex}`);
-      params.push(emailSelector || null);
+    // Handle session cookies update
+    if (sessionCookies !== undefined) {
+      const encryptedSessionCookies = sessionCookies ? encrypt(JSON.stringify(sessionCookies)) : null;
+      updates.push(`encrypted_session_cookies = $${paramIndex}`);
+      params.push(encryptedSessionCookies);
+      paramIndex++;
+
+      // Update session_last_updated when cookies are updated
+      if (sessionCookies) {
+        updates.push(`session_last_updated = $${paramIndex}`);
+        params.push(new Date());
+        paramIndex++;
+      }
+    }
+
+    if (sessionExpiresAt !== undefined) {
+      updates.push(`session_expires_at = $${paramIndex}`);
+      params.push(sessionExpiresAt ? new Date(sessionExpiresAt) : null);
       paramIndex++;
     }
 
-    if (passwordSelector !== undefined) {
-      updates.push(`password_selector = $${paramIndex}`);
-      params.push(passwordSelector || null);
-      paramIndex++;
-    }
-
-    if (submitSelector !== undefined) {
-      updates.push(`submit_selector = $${paramIndex}`);
-      params.push(submitSelector || null);
-      paramIndex++;
-    }
-
-    if (loginPageIndicator !== undefined) {
-      updates.push(`login_page_indicator = $${paramIndex}`);
-      params.push(loginPageIndicator || null);
-      paramIndex++;
-    }
-
-    // Update login_domain if loginUrl changed
-    if (loginUrl !== undefined) {
+    // Update login_domain if serviceUrl or loginUrl changed
+    if (serviceUrl !== undefined || loginUrl !== undefined) {
       let loginDomain = null;
-      if (loginUrl) {
+      const urlToUse = serviceUrl || loginUrl || existing.service_url || existing.login_url;
+      if (urlToUse) {
         try {
-          const url = new URL(loginUrl);
+          const url = new URL(urlToUse);
           loginDomain = url.hostname;
         } catch (e) {
           // Invalid URL, skip domain extraction
@@ -359,7 +356,7 @@ router.put('/:id', authMiddleware, adminOnly, async (req: AuthenticatedRequest, 
     const query = `
       UPDATE products SET ${updates.join(', ')}
       WHERE id = $${paramIndex}
-      RETURNING id, name, slug, category, price, max_concurrent_users, login_url, status
+      RETURNING id, name, slug, category, price, renewal_period, max_concurrent_users, service_url, login_url, session_expires_at, status
     `;
 
     const result = await db.query<Product>(query, params);
@@ -451,12 +448,12 @@ router.delete('/:id', authMiddleware, adminOnly, async (req: AuthenticatedReques
   }
 });
 
-router.get('/:id/credentials', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/:id/session', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
 
   try {
     const result = await db.query<Product>(
-      'SELECT encrypted_email, encrypted_password, encrypted_2fa_codes FROM products WHERE id = $1',
+      'SELECT encrypted_session_cookies, session_expires_at, session_last_updated FROM products WHERE id = $1',
       [id]
     );
 
@@ -466,16 +463,22 @@ router.get('/:id/credentials', authMiddleware, adminOnly, async (req: Authentica
       return;
     }
 
-    const email = decrypt(product.encrypted_email);
-    const password = decrypt(product.encrypted_password);
-    const twoFaCodes = product.encrypted_2fa_codes ? decrypt(product.encrypted_2fa_codes) : null;
+    let sessionCookies = null;
+    if (product.encrypted_session_cookies) {
+      try {
+        const decrypted = decrypt(product.encrypted_session_cookies);
+        sessionCookies = JSON.parse(decrypted);
+      } catch (e) {
+        console.error('Error decrypting session cookies:', e);
+      }
+    }
 
     await db.query(
       `INSERT INTO audit_logs (admin_id, action, resource_type, resource_id, ip_address, user_agent)
        VALUES ($1, $2, $3, $4, $5, $6)`,
       [
         req.user?.id,
-        'CREDENTIALS_VIEWED',
+        'SESSION_VIEWED',
         'product',
         id,
         req.ip,
@@ -484,13 +487,14 @@ router.get('/:id/credentials', authMiddleware, adminOnly, async (req: Authentica
     );
 
     res.json({
-      email,
-      password,
-      twoFaCodes
+      sessionCookies,
+      sessionExpiresAt: product.session_expires_at,
+      sessionLastUpdated: product.session_last_updated,
+      sessionExpired: product.session_expires_at && new Date(product.session_expires_at) < new Date()
     });
   } catch (error) {
-    console.error('Error fetching credentials:', error);
-    res.status(500).json({ error: 'Failed to fetch credentials' });
+    console.error('Error fetching session:', error);
+    res.status(500).json({ error: 'Failed to fetch session' });
   }
 });
 

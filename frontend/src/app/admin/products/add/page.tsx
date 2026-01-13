@@ -20,17 +20,14 @@ export default function AddProductPage() {
     name: '',
     category: '',
     price: '',
-    email: '',
-    password: '',
     maxUsers: '5',
+    serviceUrl: '',
     loginUrl: '',
     description: '',
     iconUrl: '',
-    twoFaCodes: '',
-    emailSelector: '',
-    passwordSelector: '',
-    submitSelector: '',
-    loginPageIndicator: '',
+    sessionCookies: '',
+    sessionExpiresAt: '',
+    renewalPeriod: 'month',
   });
 
   useEffect(() => {
@@ -44,27 +41,36 @@ export default function AddProductPage() {
   }, [isHydrated, authLoading, isAuthenticated, user, router]);
 
   const createMutation = useMutation({
-    mutationFn: (data: typeof formData) => adminApi.products.create({
-      name: data.name,
-      category: data.category,
-      price: parseFloat(data.price),
-      email: data.email,
-      password: data.password,
-      maxUsers: parseInt(data.maxUsers),
-      loginUrl: data.loginUrl || undefined,
-      description: data.description || undefined,
-      iconUrl: data.iconUrl || undefined,
-      twoFaCodes: data.twoFaCodes || undefined,
-      emailSelector: data.emailSelector || undefined,
-      passwordSelector: data.passwordSelector || undefined,
-      submitSelector: data.submitSelector || undefined,
-      loginPageIndicator: data.loginPageIndicator || undefined,
-    }),
+    mutationFn: (data: typeof formData) => {
+      // Parse session cookies from JSON string
+      let parsedCookies = null;
+      if (data.sessionCookies) {
+        try {
+          parsedCookies = JSON.parse(data.sessionCookies);
+        } catch (e) {
+          throw new Error('Invalid JSON format for session cookies');
+        }
+      }
+      
+      return adminApi.products.create({
+        name: data.name,
+        category: data.category,
+        price: parseFloat(data.price),
+        maxUsers: parseInt(data.maxUsers),
+        serviceUrl: data.serviceUrl || undefined,
+        loginUrl: data.loginUrl || undefined,
+        description: data.description || undefined,
+        iconUrl: data.iconUrl || undefined,
+        sessionCookies: parsedCookies,
+        sessionExpiresAt: data.sessionExpiresAt || undefined,
+        renewalPeriod: data.renewalPeriod || 'month',
+      });
+    },
     onSuccess: () => {
       router.push('/admin/products');
     },
     onError: (err: any) => {
-      setError(err.response?.data?.error || 'Failed to create product');
+      setError(err.response?.data?.error || err.message || 'Failed to create product');
     },
   });
 
@@ -76,9 +82,19 @@ export default function AddProductPage() {
     e.preventDefault();
     setError('');
 
-    if (!formData.name || !formData.category || !formData.price || !formData.email || !formData.password) {
-      setError('Please fill in all required fields');
+    if (!formData.name || !formData.category || !formData.price) {
+      setError('Please fill in all required fields (name, category, price)');
       return;
+    }
+
+    // Validate session cookies JSON if provided
+    if (formData.sessionCookies) {
+      try {
+        JSON.parse(formData.sessionCookies);
+      } catch (e) {
+        setError('Session cookies must be valid JSON format');
+        return;
+      }
     }
 
     createMutation.mutate(formData);
@@ -101,7 +117,7 @@ export default function AddProductPage() {
           <ArrowLeft className="w-4 h-4 mr-2" /> Back to Products
         </Link>
         <h1 className="text-3xl font-bold text-gray-900">Add New Product</h1>
-        <p className="text-gray-600 mt-2">Add a new product with encrypted credentials.</p>
+        <p className="text-gray-600 mt-2">Add a new product with session-based authentication.</p>
       </div>
 
       <Card>
@@ -171,110 +187,97 @@ export default function AddProductPage() {
             </div>
 
             <div className="border-t pt-6">
-              <h3 className="text-md font-semibold text-gray-900 mb-4">Account Credentials</h3>
+              <h3 className="text-md font-semibold text-gray-900 mb-4">Service URLs</h3>
               <p className="text-sm text-gray-500 mb-4">
-                These credentials will be encrypted with AES-256 and stored securely.
+                Configure the URLs for this product. The service URL is where users will be redirected after session injection.
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <Input
-                  id="email"
-                  name="email"
-                  label="Account Email *"
-                  type="email"
-                  value={formData.email}
+                  id="serviceUrl"
+                  name="serviceUrl"
+                  label="Service URL (main app URL)"
+                  type="url"
+                  value={formData.serviceUrl}
                   onChange={handleChange}
-                  placeholder="account@example.com"
-                  required
+                  placeholder="https://app.example.com/dashboard"
                 />
 
-                <Input
-                  id="password"
-                  name="password"
-                  label="Account Password *"
-                  type="password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  placeholder="Enter account password"
-                  required
-                />
-              </div>
-
-              <div className="mt-4">
-                <label htmlFor="twoFaCodes" className="block text-sm font-medium text-gray-700 mb-1">
-                  2FA Backup Codes (optional)
-                </label>
-                <textarea
-                  id="twoFaCodes"
-                  name="twoFaCodes"
-                  value={formData.twoFaCodes}
-                  onChange={handleChange}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Enter backup codes, one per line"
-                />
-              </div>
-            </div>
-
-            <div className="border-t pt-6">
-              <h3 className="text-md font-semibold text-gray-900 mb-4">Extension Auto-Login Configuration</h3>
-              <p className="text-sm text-gray-500 mb-4">
-                Configure the login page selectors so the browser extension can automatically fill credentials. Use CSS selectors to identify form elements.
-              </p>
-
-              <div className="space-y-4">
                 <Input
                   id="loginUrl"
                   name="loginUrl"
-                  label="Login URL *"
+                  label="Login URL (optional)"
                   type="url"
                   value={formData.loginUrl}
                   onChange={handleChange}
                   placeholder="https://example.com/login"
                 />
+              </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    id="emailSelector"
-                    name="emailSelector"
-                    label="Email Field Selector"
-                    value={formData.emailSelector}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                <div>
+                  <label htmlFor="renewalPeriod" className="block text-sm font-medium text-gray-700 mb-1">
+                    Renewal Period
+                  </label>
+                  <select
+                    id="renewalPeriod"
+                    name="renewalPeriod"
+                    value={formData.renewalPeriod}
                     onChange={handleChange}
-                    placeholder="input[type='email'], #email, input[name='email']"
-                  />
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="month">Monthly</option>
+                    <option value="year">Yearly</option>
+                    <option value="lifetime">Lifetime</option>
+                  </select>
+                </div>
+              </div>
+            </div>
 
-                  <Input
-                    id="passwordSelector"
-                    name="passwordSelector"
-                    label="Password Field Selector"
-                    value={formData.passwordSelector}
+            <div className="border-t pt-6">
+              <h3 className="text-md font-semibold text-gray-900 mb-4">Session Cookies (for auto-login)</h3>
+              <p className="text-sm text-gray-500 mb-4">
+                Paste the session cookies from the logged-in browser session. The extension will inject these cookies to automatically log users in.
+              </p>
+
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="sessionCookies" className="block text-sm font-medium text-gray-700 mb-1">
+                    Session Cookies (JSON format)
+                  </label>
+                  <textarea
+                    id="sessionCookies"
+                    name="sessionCookies"
+                    value={formData.sessionCookies}
                     onChange={handleChange}
-                    placeholder="input[type='password'], #password"
+                    rows={6}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                    placeholder='[{"name": "session_id", "value": "abc123", "domain": ".example.com", "path": "/"}]'
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    id="submitSelector"
-                    name="submitSelector"
-                    label="Submit Button Selector"
-                    value={formData.submitSelector}
-                    onChange={handleChange}
-                    placeholder="button[type='submit'], .login-btn"
-                  />
-
-                  <Input
-                    id="loginPageIndicator"
-                    name="loginPageIndicator"
-                    label="Login Page Indicator (optional)"
-                    value={formData.loginPageIndicator}
-                    onChange={handleChange}
-                    placeholder="form.login-form, #login-container"
-                  />
-                </div>
+                <Input
+                  id="sessionExpiresAt"
+                  name="sessionExpiresAt"
+                  label="Session Expires At (optional)"
+                  type="datetime-local"
+                  value={formData.sessionExpiresAt}
+                  onChange={handleChange}
+                />
 
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-                  <strong>How to find selectors:</strong> Right-click on the login form element in Chrome, select "Inspect", then right-click the highlighted element and choose "Copy selector". Common patterns: <code className="bg-blue-100 px-1 rounded">input[type=&apos;email&apos;]</code>, <code className="bg-blue-100 px-1 rounded">#email</code>, <code className="bg-blue-100 px-1 rounded">input[name=&apos;username&apos;]</code>
+                  <strong>How to capture session cookies:</strong>
+                  <ol className="list-decimal ml-4 mt-2 space-y-1">
+                    <li>Log into the service in Chrome</li>
+                    <li>Open DevTools (F12) and go to Application tab</li>
+                    <li>Click on Cookies in the left sidebar</li>
+                    <li>Select the domain and copy all relevant cookies</li>
+                    <li>Format as JSON array with name, value, domain, and path for each cookie</li>
+                  </ol>
+                  <p className="mt-2">Example format:</p>
+                  <code className="block bg-blue-100 p-2 rounded mt-1 text-xs overflow-x-auto">
+                    {`[{"name": "session", "value": "xyz", "domain": ".site.com", "path": "/"}]`}
+                  </code>
                 </div>
               </div>
             </div>
