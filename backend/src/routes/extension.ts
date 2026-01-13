@@ -127,19 +127,32 @@ router.post('/verify-code', async (req, res) => {
     );
 
     const userResult = await db.query(
-      'SELECT email FROM users WHERE id = $1',
+      'SELECT email, role FROM users WHERE id = $1',
       [purchase.user_id]
     );
 
+    const user = userResult.rows[0];
+
+    // If user is admin, also fetch all products for cookie capture
+    let products: any[] = [];
+    if (user && user.role === 'admin') {
+      const productsResult = await db.query(
+        'SELECT id, name, login_domain, service_url, session_expires_at FROM products WHERE status = $1 ORDER BY name',
+        ['active']
+      );
+      products = productsResult.rows;
+    }
+
     res.json({
       success: true,
-      user: userResult.rows[0] ? { email: userResult.rows[0].email } : null,
+      user: user ? { email: user.email, role: user.role } : null,
       subscriptions: subscriptions.rows.map((row: any) => ({
         product_id: row.product_id,
         product_name: row.product_name,
         login_url: row.login_url,
         expires_at: row.expires_at
-      }))
+      })),
+      products: user?.role === 'admin' ? products : undefined
     });
   } catch (error) {
     console.error('Error verifying code:', error);

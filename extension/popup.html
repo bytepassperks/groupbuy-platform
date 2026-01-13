@@ -11,7 +11,7 @@
       box-sizing: border-box;
     }
     body {
-      width: 320px;
+      width: 360px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #f8fafc;
     }
@@ -30,6 +30,16 @@
       opacity: 0.9;
       margin-top: 4px;
     }
+    .admin-badge {
+      display: inline-block;
+      background: #fbbf24;
+      color: #78350f;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      margin-top: 6px;
+      font-weight: 600;
+    }
     .content {
       padding: 16px;
     }
@@ -45,6 +55,12 @@
     .subscriptions.active {
       display: block;
     }
+    .admin-panel {
+      display: none;
+    }
+    .admin-panel.active {
+      display: block;
+    }
     .form-group {
       margin-bottom: 12px;
     }
@@ -55,7 +71,7 @@
       color: #374151;
       margin-bottom: 4px;
     }
-    input {
+    input, select {
       width: 100%;
       padding: 10px 12px;
       border: 1px solid #d1d5db;
@@ -63,7 +79,7 @@
       font-size: 14px;
       transition: border-color 0.2s;
     }
-    input:focus {
+    input:focus, select:focus {
       outline: none;
       border-color: #2563eb;
       box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
@@ -97,6 +113,20 @@
     .btn-secondary:hover {
       background: #d1d5db;
     }
+    .btn-success {
+      background: #10b981;
+      color: white;
+    }
+    .btn-success:hover {
+      background: #059669;
+    }
+    .btn-warning {
+      background: #f59e0b;
+      color: white;
+    }
+    .btn-warning:hover {
+      background: #d97706;
+    }
     .error {
       background: #fef2f2;
       border: 1px solid #fecaca;
@@ -108,6 +138,19 @@
       display: none;
     }
     .error.show {
+      display: block;
+    }
+    .success {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      color: #166534;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      margin-bottom: 12px;
+      display: none;
+    }
+    .success.show {
       display: block;
     }
     .subscription-item {
@@ -199,12 +242,80 @@
     .auto-login-btn {
       margin-top: 12px;
     }
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #e5e7eb;
+      margin-bottom: 12px;
+    }
+    .tab {
+      flex: 1;
+      padding: 10px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 500;
+      color: #6b7280;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab:hover {
+      color: #2563eb;
+    }
+    .tab.active {
+      color: #2563eb;
+      border-bottom-color: #2563eb;
+    }
+    .cookie-capture-section {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .cookie-capture-section h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #111827;
+      margin-bottom: 8px;
+    }
+    .cookie-capture-section p {
+      font-size: 12px;
+      color: #6b7280;
+      margin-bottom: 12px;
+    }
+    .current-domain {
+      background: #f3f4f6;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #374151;
+      margin-bottom: 12px;
+      word-break: break-all;
+    }
+    .cookie-count {
+      font-size: 11px;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+    .cookie-preview {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 8px;
+      margin-top: 8px;
+      max-height: 100px;
+      overflow-y: auto;
+      font-size: 11px;
+      font-family: monospace;
+      color: #374151;
+    }
   </style>
 </head>
 <body>
   <div class="header">
     <h1>GroupBuy</h1>
     <p>Secure Auto-Login</p>
+    <span id="adminBadge" class="admin-badge" style="display: none;">ADMIN</span>
   </div>
   
   <div class="content">
@@ -227,10 +338,48 @@
         <span id="userEmail" class="user-email"></span>
         <button id="logoutBtn" class="logout-btn">Logout</button>
       </div>
-      <div id="subscriptionList"></div>
-      <button id="autoLoginBtn" class="btn btn-primary auto-login-btn" style="display: none;">
-        Auto-Login to Selected Tool
-      </button>
+      
+      <div id="adminTabs" class="tabs" style="display: none;">
+        <div class="tab active" data-tab="user">My Subscriptions</div>
+        <div class="tab" data-tab="admin">Capture Cookies</div>
+      </div>
+      
+      <div id="userTab">
+        <div id="subscriptionList"></div>
+        <button id="autoLoginBtn" class="btn btn-primary auto-login-btn" style="display: none;">
+          Auto-Login to Selected Tool
+        </button>
+      </div>
+      
+      <div id="adminTab" class="admin-panel">
+        <div id="successMsg" class="success"></div>
+        <div id="adminError" class="error"></div>
+        
+        <div class="cookie-capture-section">
+          <h3>Capture Session Cookies</h3>
+          <p>Log into a service, then capture its cookies here to enable auto-login for all users.</p>
+          
+          <div class="current-domain">
+            <strong>Current Domain:</strong> <span id="currentDomain">Loading...</span>
+            <div id="cookieCount" class="cookie-count"></div>
+          </div>
+          
+          <div class="form-group">
+            <label for="productSelect">Save to Product</label>
+            <select id="productSelect">
+              <option value="">Select a product...</option>
+            </select>
+          </div>
+          
+          <button id="captureBtn" class="btn btn-warning">Capture Cookies from Current Page</button>
+          
+          <div id="cookiePreview" class="cookie-preview" style="display: none;"></div>
+          
+          <button id="saveCookiesBtn" class="btn btn-success" style="display: none; margin-top: 8px;">
+            Save Cookies to Product
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 

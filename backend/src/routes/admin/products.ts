@@ -448,6 +448,75 @@ router.delete('/:id', authMiddleware, adminOnly, async (req: AuthenticatedReques
   }
 });
 
+// Endpoint for admin extension to save captured cookies
+router.post('/:id/capture-cookies', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const { cookies, domain, sessionExpiresAt } = req.body;
+
+  try {
+    if (!cookies || !Array.isArray(cookies) || cookies.length === 0) {
+      res.status(400).json({ error: 'Cookies array is required' });
+      return;
+    }
+
+    // Verify product exists
+    const productResult = await db.query<Product>(
+      'SELECT id, name FROM products WHERE id = $1',
+      [id]
+    );
+
+    const product = productResult.rows[0];
+    if (!product) {
+      res.status(404).json({ error: 'Product not found' });
+      return;
+    }
+
+    // Encrypt and save cookies
+    const encryptedCookies = encrypt(JSON.stringify(cookies));
+
+    await db.query(
+      `UPDATE products SET
+        encrypted_session_cookies = $1,
+        session_expires_at = $2,
+        session_last_updated = $3,
+        login_domain = COALESCE($4, login_domain),
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = $5`,
+      [
+        encryptedCookies,
+        sessionExpiresAt ? new Date(sessionExpiresAt) : null,
+        new Date(),
+        domain,
+        id
+      ]
+    );
+
+    // Log the action
+    await db.query(
+      `INSERT INTO audit_logs (admin_id, action, resource_type, resource_id, new_value, ip_address, user_agent)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        req.user?.id,
+        'SESSION_COOKIES_CAPTURED',
+        'product',
+        id,
+        JSON.stringify({ cookieCount: cookies.length, domain }),
+        req.ip,
+        req.headers['user-agent']
+      ]
+    );
+
+    res.json({
+      success: true,
+      message: `Successfully saved ${cookies.length} cookies for ${product.name}`,
+      cookieCount: cookies.length
+    });
+  } catch (error) {
+    console.error('Error saving captured cookies:', error);
+    res.status(500).json({ error: 'Failed to save cookies' });
+  }
+});
+
 router.get('/:id/session', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
 
