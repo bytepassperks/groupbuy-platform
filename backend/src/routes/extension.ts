@@ -410,9 +410,9 @@ router.post('/get-credentials-secure', async (req, res) => {
       return;
     }
 
-    // Check concurrent users
+    // Check concurrent users - count UNIQUE users, not all access attempts
     const activeSessions = await db.query(
-      `SELECT COUNT(*) as count FROM access_logs
+      `SELECT COUNT(DISTINCT user_id) as count FROM access_logs
        WHERE product_id = $1 AND logout_time IS NULL
        AND login_time > NOW() - INTERVAL '24 hours'`,
       [purchase.prod_id]
@@ -420,9 +420,21 @@ router.post('/get-credentials-secure', async (req, res) => {
 
     const currentUsers = parseInt(activeSessions.rows[0]?.count || '0', 10);
 
-    if (currentUsers >= purchase.max_concurrent_users) {
+    // Check if THIS user already has an active session (don't count them twice)
+    const userHasActiveSession = await db.query(
+      `SELECT 1 FROM access_logs
+       WHERE product_id = $1 AND user_id = $2 AND logout_time IS NULL
+       AND login_time > NOW() - INTERVAL '24 hours'
+       LIMIT 1`,
+      [purchase.prod_id, purchase.user_id]
+    );
+
+    const isNewUser = userHasActiveSession.rows.length === 0;
+
+    // Only check limit if this is a new user trying to access
+    if (isNewUser && currentUsers >= purchase.max_concurrent_users) {
       res.status(403).json({
-        error: `Maximum concurrent users (${purchase.max_concurrent_users}) reached.`
+        error: `Maximum concurrent users (${purchase.max_concurrent_users}) reached. Please try again later.`
       });
       return;
     }
