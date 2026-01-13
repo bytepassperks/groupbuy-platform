@@ -71,6 +71,32 @@ function waitForElement(selector, timeout = 10000) {
   });
 }
 
+function isInOverlay(el) {
+  if (!el) return false;
+  return el.closest('[role="dialog"], .cookie-banner, .modal, .overlay, [class*="cookie"], [class*="consent"], [class*="popup"], [class*="banner"]') != null;
+}
+
+function clickCookieButtons() {
+  const buttons = Array.from(document.querySelectorAll('button, a, span'));
+  
+  for (const btn of buttons) {
+    const text = btn.textContent.toLowerCase();
+    if ((text.includes('accept') && (text.includes('cookie') || text.includes('all'))) ||
+        text.includes('allow all') ||
+        text.includes('agree') ||
+        text === 'accept' ||
+        text === 'ok') {
+      
+      if (btn.offsetParent !== null) {
+        console.log('[GroupBuy] Clicking cookie accept button:', btn.textContent.trim());
+        btn.click();
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function simulateInput(element, value) {
   element.focus();
   element.value = value;
@@ -86,19 +112,54 @@ async function performLogin(credentials, selectors) {
     console.log('[GroupBuy] Starting auto-login...');
 
     const emailField = await waitForElement(selectors.emailField);
+    
+    if (isInOverlay(emailField)) {
+      console.log('[GroupBuy] Email field is in an overlay, skipping');
+      return false;
+    }
+
+    const form = emailField.closest('form');
+    if (!form) {
+      console.log('[GroupBuy] Warning: Email field is not inside a form element');
+    }
+
     simulateInput(emailField, credentials.email);
     console.log('[GroupBuy] Email entered');
 
     await new Promise(resolve => setTimeout(resolve, 500));
 
     const passwordField = await waitForElement(selectors.passwordField);
+    
+    if (isInOverlay(passwordField)) {
+      console.log('[GroupBuy] Password field is in an overlay, skipping');
+      return false;
+    }
+
     simulateInput(passwordField, credentials.password);
     console.log('[GroupBuy] Password entered');
 
     await new Promise(resolve => setTimeout(resolve, 500));
 
     const submitButton = await waitForElement(selectors.submitButton);
-    submitButton.click();
+    
+    if (isInOverlay(submitButton)) {
+      console.log('[GroupBuy] Submit button is in an overlay, skipping');
+      return false;
+    }
+
+    if (form) {
+      const formSubmitButton = form.querySelector(selectors.submitButton);
+      if (formSubmitButton && !isInOverlay(formSubmitButton)) {
+        console.log('[GroupBuy] Clicking form submit button');
+        formSubmitButton.click();
+      } else {
+        console.log('[GroupBuy] Clicking detected submit button');
+        submitButton.click();
+      }
+    } else {
+      submitButton.click();
+    }
+    
     console.log('[GroupBuy] Login submitted');
 
     return true;
@@ -229,33 +290,47 @@ async function fetchCredentialsAndLogin(hostname, selectors) {
   const hostname = getHostname();
   if (!hostname) return;
 
-  await new Promise(resolve => setTimeout(resolve, 2000));
+  console.log('[GroupBuy] Extension loaded on', hostname);
+
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  clickCookieButtons();
+
+  await new Promise(resolve => setTimeout(resolve, 1000));
 
   const selectors = LOGIN_SELECTORS[hostname];
   
-  const emailField = document.querySelector(selectors.emailField);
-  const passwordField = document.querySelector(selectors.passwordField);
-  
-  const isLoginPage = emailField && passwordField;
-  
-  if (!isLoginPage) {
-    console.log('[GroupBuy] Not a login page, skipping auto-login');
-    return;
+  try {
+    const emailField = await waitForElement(selectors.emailField, 5000);
+    const passwordField = await waitForElement(selectors.passwordField, 5000);
+    
+    if (isInOverlay(emailField) || isInOverlay(passwordField)) {
+      console.log('[GroupBuy] Login fields are in an overlay (cookie banner, popup), skipping');
+      return;
+    }
+
+    const form = emailField.closest('form');
+    if (!form) {
+      console.log('[GroupBuy] Warning: Email field is not inside a form element');
+    }
+
+    console.log('[GroupBuy] Login page detected on', hostname);
+
+    const stored = await chrome.storage.local.get(['accessCode', 'autoLoginEnabled']);
+    
+    if (!stored.accessCode) {
+      console.log('[GroupBuy] No access code stored. Please enter your access code in the extension popup.');
+      return;
+    }
+
+    if (stored.autoLoginEnabled === false) {
+      console.log('[GroupBuy] Auto-login is disabled');
+      return;
+    }
+
+    await fetchCredentialsAndLogin(hostname, selectors);
+    
+  } catch (error) {
+    console.log('[GroupBuy] Login form not found:', error.message);
   }
-
-  console.log('[GroupBuy] Login page detected on', hostname);
-
-  const stored = await chrome.storage.local.get(['accessCode', 'autoLoginEnabled']);
-  
-  if (!stored.accessCode) {
-    console.log('[GroupBuy] No access code stored. Please enter your access code in the extension popup.');
-    return;
-  }
-
-  if (stored.autoLoginEnabled === false) {
-    console.log('[GroupBuy] Auto-login is disabled');
-    return;
-  }
-
-  await fetchCredentialsAndLogin(hostname, selectors);
 })();
