@@ -151,6 +151,21 @@ export const adminApi = {
     delete: (id: number) => api.delete(`/admin/products/${id}`),
     
     getSession: (id: number) => api.get(`/admin/products/${id}/session`),
+    
+    // Multi-account management
+    getAccounts: (productId: number) => api.get(`/admin/products/${productId}/accounts`),
+    
+    addAccount: (productId: number, data: { accountName?: string; accountEmail?: string; maxUsersPerAccount?: number }) =>
+      api.post(`/admin/products/${productId}/accounts`, data),
+    
+    updateAccount: (productId: number, accountId: number, data: { accountName?: string; accountEmail?: string; maxUsersPerAccount?: number; isActive?: boolean }) =>
+      api.put(`/admin/products/${productId}/accounts/${accountId}`, data),
+    
+    deleteAccount: (productId: number, accountId: number) =>
+      api.delete(`/admin/products/${productId}/accounts/${accountId}`),
+    
+    captureAccountCookies: (productId: number, accountId: number, data: { cookies: any[]; domain?: string; sessionExpiresAt?: string }) =>
+      api.post(`/admin/products/${productId}/accounts/${accountId}/capture-cookies`, data),
   },
   
   users: {

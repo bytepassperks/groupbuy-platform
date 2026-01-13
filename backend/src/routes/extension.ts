@@ -410,56 +410,148 @@ router.post('/get-credentials-secure', async (req, res) => {
       return;
     }
 
-    // Check concurrent users - count UNIQUE users, not all access attempts
-    const activeSessions = await db.query(
-      `SELECT COUNT(DISTINCT user_id) as count FROM access_logs
-       WHERE product_id = $1 AND logout_time IS NULL
-       AND login_time > NOW() - INTERVAL '24 hours'`,
+    // Check if product has multiple accounts configured
+    const accountsResult = await db.query(
+      `SELECT id, account_name, encrypted_session_cookies, session_expires_at, current_users, max_users_per_account
+       FROM product_accounts
+       WHERE product_id = $1 AND is_active = true AND encrypted_session_cookies IS NOT NULL
+       ORDER BY id`,
       [purchase.prod_id]
     );
 
-    const currentUsers = parseInt(activeSessions.rows[0]?.count || '0', 10);
-
-    // Check if THIS user already has an active session (don't count them twice)
-    const userHasActiveSession = await db.query(
-      `SELECT 1 FROM access_logs
-       WHERE product_id = $1 AND user_id = $2 AND logout_time IS NULL
-       AND login_time > NOW() - INTERVAL '24 hours'
-       LIMIT 1`,
-      [purchase.prod_id, purchase.user_id]
-    );
-
-    const isNewUser = userHasActiveSession.rows.length === 0;
-
-    // Only check limit if this is a new user trying to access
-    if (isNewUser && currentUsers >= purchase.max_concurrent_users) {
-      res.status(403).json({
-        error: `Maximum concurrent users (${purchase.max_concurrent_users}) reached. Please try again later.`
-      });
-      return;
-    }
-
-    // Check if session cookies are configured
-    if (!purchase.encrypted_session_cookies) {
-      res.status(404).json({ error: 'Session cookies not configured for this product.' });
-      return;
-    }
-
-    // Check if session has expired
-    if (purchase.session_expires_at && new Date() > new Date(purchase.session_expires_at)) {
-      res.status(403).json({ error: 'Product session has expired. Please contact admin.' });
-      return;
-    }
-
-    // Decrypt session cookies
     let sessionCookies;
-    try {
-      const decrypted = decrypt(purchase.encrypted_session_cookies);
-      sessionCookies = JSON.parse(decrypted);
-    } catch (e) {
-      console.error('Failed to decrypt session cookies:', e);
-      res.status(500).json({ error: 'Failed to decrypt session cookies' });
-      return;
+    let selectedAccountId: number | null = null;
+    let sessionExpiresAt = purchase.session_expires_at;
+
+    if (accountsResult.rows.length > 0) {
+      // Multi-account mode: Use round-robin selection
+      console.log(`[Multi-Account] Found ${accountsResult.rows.length} accounts for product ${purchase.prod_name}`);
+
+      // Check if user already has an account assignment
+      const existingAssignment = await db.query(
+        `SELECT account_id FROM user_account_assignments
+         WHERE user_id = $1 AND product_id = $2 AND is_active = true`,
+        [purchase.user_id, purchase.prod_id]
+      );
+
+      let account;
+      if (existingAssignment.rows.length > 0) {
+        // User already assigned to an account, use that one
+        const assignedAccountId = existingAssignment.rows[0].account_id;
+        account = accountsResult.rows.find((a: any) => a.id === assignedAccountId);
+        
+        if (!account) {
+          // Assigned account no longer available, reassign
+          console.log('[Multi-Account] Previously assigned account no longer available, reassigning...');
+          await db.query(
+            'DELETE FROM user_account_assignments WHERE user_id = $1 AND product_id = $2',
+            [purchase.user_id, purchase.prod_id]
+          );
+        } else {
+          console.log(`[Multi-Account] User already assigned to ${account.account_name}`);
+          selectedAccountId = account.id;
+        }
+      }
+
+      if (!account) {
+        // Round-robin: Find account with fewest current users that has capacity
+        const availableAccounts = accountsResult.rows.filter(
+          (a: any) => a.current_users < a.max_users_per_account
+        );
+
+        if (availableAccounts.length === 0) {
+          res.status(403).json({
+            error: 'All accounts are at maximum capacity. Please try again later.'
+          });
+          return;
+        }
+
+        // Sort by current_users (ascending) to get least loaded account
+        availableAccounts.sort((a: any, b: any) => a.current_users - b.current_users);
+        account = availableAccounts[0];
+        selectedAccountId = account.id;
+
+        console.log(`[Multi-Account] Assigning user to ${account.account_name} (${account.current_users}/${account.max_users_per_account} users)`);
+
+        // Create assignment
+        await db.query(
+          `INSERT INTO user_account_assignments (user_id, product_id, account_id, expires_at)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (user_id, product_id) DO UPDATE SET account_id = $3, assigned_at = NOW(), is_active = true`,
+          [purchase.user_id, purchase.prod_id, selectedAccountId, purchase.expires_at]
+        );
+
+        // Increment current_users count for the account
+        await db.query(
+          'UPDATE product_accounts SET current_users = current_users + 1, last_assigned_at = NOW() WHERE id = $1',
+          [selectedAccountId]
+        );
+      }
+
+      // Decrypt cookies from the selected account
+      try {
+        const decrypted = decrypt(account.encrypted_session_cookies);
+        sessionCookies = JSON.parse(decrypted);
+        sessionExpiresAt = account.session_expires_at;
+      } catch (e) {
+        console.error('Failed to decrypt account session cookies:', e);
+        res.status(500).json({ error: 'Failed to decrypt session cookies' });
+        return;
+      }
+    } else {
+      // Single account mode (legacy): Use product-level cookies
+      console.log('[Single-Account] Using product-level session cookies');
+
+      // Check concurrent users - count UNIQUE users, not all access attempts
+      const activeSessions = await db.query(
+        `SELECT COUNT(DISTINCT user_id) as count FROM access_logs
+         WHERE product_id = $1 AND logout_time IS NULL
+         AND login_time > NOW() - INTERVAL '24 hours'`,
+        [purchase.prod_id]
+      );
+
+      const currentUsers = parseInt(activeSessions.rows[0]?.count || '0', 10);
+
+      // Check if THIS user already has an active session (don't count them twice)
+      const userHasActiveSession = await db.query(
+        `SELECT 1 FROM access_logs
+         WHERE product_id = $1 AND user_id = $2 AND logout_time IS NULL
+         AND login_time > NOW() - INTERVAL '24 hours'
+         LIMIT 1`,
+        [purchase.prod_id, purchase.user_id]
+      );
+
+      const isNewUser = userHasActiveSession.rows.length === 0;
+
+      // Only check limit if this is a new user trying to access
+      if (isNewUser && currentUsers >= purchase.max_concurrent_users) {
+        res.status(403).json({
+          error: `Maximum concurrent users (${purchase.max_concurrent_users}) reached. Please try again later.`
+        });
+        return;
+      }
+
+      // Check if session cookies are configured
+      if (!purchase.encrypted_session_cookies) {
+        res.status(404).json({ error: 'Session cookies not configured for this product.' });
+        return;
+      }
+
+      // Check if session has expired
+      if (purchase.session_expires_at && new Date() > new Date(purchase.session_expires_at)) {
+        res.status(403).json({ error: 'Product session has expired. Please contact admin.' });
+        return;
+      }
+
+      // Decrypt session cookies
+      try {
+        const decrypted = decrypt(purchase.encrypted_session_cookies);
+        sessionCookies = JSON.parse(decrypted);
+      } catch (e) {
+        console.error('Failed to decrypt session cookies:', e);
+        res.status(500).json({ error: 'Failed to decrypt session cookies' });
+        return;
+      }
     }
 
     // Encrypt session cookies with client's public key
@@ -602,6 +694,31 @@ router.post('/logout', async (req, res) => {
            ORDER BY login_time DESC LIMIT 1`,
           [session.user_id, session.product_id]
         );
+
+        // Decrement user count for multi-account assignment
+        const assignmentResult = await db.query(
+          `SELECT account_id FROM user_account_assignments
+           WHERE user_id = $1 AND product_id = $2 AND is_active = true`,
+          [session.user_id, session.product_id]
+        );
+
+        if (assignmentResult.rows.length > 0) {
+          const accountId = assignmentResult.rows[0].account_id;
+          
+          // Decrement current_users count (but don't go below 0)
+          await db.query(
+            'UPDATE product_accounts SET current_users = GREATEST(0, current_users - 1) WHERE id = $1',
+            [accountId]
+          );
+
+          // Deactivate the assignment
+          await db.query(
+            'UPDATE user_account_assignments SET is_active = false WHERE user_id = $1 AND product_id = $2',
+            [session.user_id, session.product_id]
+          );
+
+          console.log(`[Multi-Account] User logged out, decremented count for account ${accountId}`);
+        }
 
         await db.query('DELETE FROM session_tokens WHERE token_hash = $1', [tokenHash]);
       }

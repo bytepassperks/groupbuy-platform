@@ -8,6 +8,7 @@ let products = [];
 let capturedCookies = [];
 let currentDomain = '';
 let authToken = null;
+let productAccounts = []; // Accounts for selected product
 
 document.addEventListener('DOMContentLoaded', async () => {
   const loading = document.getElementById('loading');
@@ -293,6 +294,98 @@ function populateProductSelect() {
     }
     select.appendChild(option);
   });
+  
+  // Add change listener to load accounts when product is selected
+  select.addEventListener('change', async () => {
+    const productId = select.value;
+    if (productId) {
+      await loadProductAccounts(productId);
+    } else {
+      productAccounts = [];
+      updateAccountSelect();
+    }
+  });
+}
+
+async function loadProductAccounts(productId) {
+  try {
+    // Get auth token first
+    const loginResponse = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'harryroger798@gmail.com',
+        password: '007JamesBond@@'
+      }),
+    });
+    
+    if (!loginResponse.ok) {
+      throw new Error('Failed to authenticate');
+    }
+    
+    const loginData = await loginResponse.json();
+    const token = loginData.accessToken;
+    
+    // Fetch accounts for this product
+    const response = await fetch(`${API_URL}/admin/products/${productId}/accounts`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to load accounts');
+    }
+    
+    const data = await response.json();
+    productAccounts = data.accounts || [];
+    updateAccountSelect();
+  } catch (error) {
+    console.error('Error loading accounts:', error);
+    productAccounts = [];
+    updateAccountSelect();
+  }
+}
+
+function updateAccountSelect() {
+  let accountSelectContainer = document.getElementById('accountSelectContainer');
+  
+  // Create container if it doesn't exist
+  if (!accountSelectContainer) {
+    accountSelectContainer = document.createElement('div');
+    accountSelectContainer.id = 'accountSelectContainer';
+    accountSelectContainer.style.marginTop = '10px';
+    
+    const productSelect = document.getElementById('productSelect');
+    productSelect.parentNode.insertBefore(accountSelectContainer, productSelect.nextSibling);
+  }
+  
+  if (productAccounts.length === 0) {
+    accountSelectContainer.innerHTML = `
+      <div style="padding: 8px; background: #fef3c7; border-radius: 4px; font-size: 12px; color: #92400e;">
+        No accounts configured for this product. Cookies will be saved to the product directly (legacy mode).
+        <br><br>
+        To use multi-account rotation, add accounts in the admin panel first.
+      </div>
+    `;
+    return;
+  }
+  
+  accountSelectContainer.innerHTML = `
+    <label style="display: block; font-size: 12px; color: #666; margin-bottom: 4px;">Select Account Slot:</label>
+    <select id="accountSelect" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+      <option value="">Save to product (legacy)</option>
+      ${productAccounts.map(acc => `
+        <option value="${acc.id}">
+          ${acc.account_name} (${acc.current_users}/${acc.max_users_per_account} users)
+          ${acc.session_last_updated ? ' - Has Cookies' : ' - No Cookies'}
+        </option>
+      `).join('')}
+    </select>
+    <div style="margin-top: 4px; font-size: 11px; color: #666;">
+      ${productAccounts.length} account(s) available for rotation
+    </div>
+  `;
 }
 
 async function captureCookies() {
@@ -371,11 +464,13 @@ async function captureCookies() {
 
 async function saveCookiesToProduct() {
   const productSelect = document.getElementById('productSelect');
+  const accountSelect = document.getElementById('accountSelect');
   const saveCookiesBtn = document.getElementById('saveCookiesBtn');
   const adminError = document.getElementById('adminError');
   const successMsg = document.getElementById('successMsg');
   
   const productId = productSelect.value;
+  const accountId = accountSelect ? accountSelect.value : '';
   
   if (!productId) {
     adminError.textContent = 'Please select a product to save cookies to';
@@ -413,8 +508,18 @@ async function saveCookiesToProduct() {
     const loginData = await loginResponse.json();
     const token = loginData.accessToken;
     
+    // Determine the endpoint based on whether an account is selected
+    let endpoint;
+    if (accountId) {
+      // Save to specific account slot
+      endpoint = `${API_URL}/admin/products/${productId}/accounts/${accountId}/capture-cookies`;
+    } else {
+      // Save to product directly (legacy mode)
+      endpoint = `${API_URL}/admin/products/${productId}/capture-cookies`;
+    }
+    
     // Now save the cookies
-    const response = await fetch(`${API_URL}/admin/products/${productId}/capture-cookies`, {
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -439,6 +544,11 @@ async function saveCookiesToProduct() {
     capturedCookies = [];
     document.getElementById('cookiePreview').style.display = 'none';
     saveCookiesBtn.style.display = 'none';
+    
+    // Refresh accounts list if we saved to an account
+    if (accountId && productId) {
+      await loadProductAccounts(productId);
+    }
     
   } catch (error) {
     adminError.textContent = error.message;

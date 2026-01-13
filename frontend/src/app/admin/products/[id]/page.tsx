@@ -8,7 +8,18 @@ import { useAuthStore } from '@/stores/auth';
 import Button from '@/components/ui/Button';
 import Card, { CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
-import { ArrowLeft, Save, Trash2, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, Eye, EyeOff, Plus, Users, RefreshCw } from 'lucide-react';
+
+interface ProductAccount {
+  id: number;
+  account_name: string;
+  account_email?: string;
+  is_active: boolean;
+  current_users: number;
+  max_users_per_account: number;
+  session_expires_at?: string;
+  session_last_updated?: string;
+}
 
 interface Product {
   id: number;
@@ -47,6 +58,9 @@ export default function AdminProductDetailPage() {
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [accounts, setAccounts] = useState<ProductAccount[]>([]);
+  const [newAccountName, setNewAccountName] = useState('');
+  const [newAccountMaxUsers, setNewAccountMaxUsers] = useState('5');
 
   const productId = parseInt(params.id as string, 10);
 
@@ -60,6 +74,57 @@ export default function AdminProductDetailPage() {
     queryKey: ['admin-product-session', productId],
     queryFn: () => adminApi.products.getSession(productId),
     enabled: showCredentials && !!productId,
+  });
+
+  const { data: accountsData, refetch: refetchAccounts } = useQuery({
+    queryKey: ['admin-product-accounts', productId],
+    queryFn: () => adminApi.products.getAccounts(productId),
+    enabled: !!productId && !authLoading && user?.role === 'admin',
+  });
+
+  // Update accounts state when data changes
+  useEffect(() => {
+    if (accountsData?.data?.accounts) {
+      setAccounts(accountsData.data.accounts);
+    }
+  }, [accountsData]);
+
+  const addAccountMutation = useMutation({
+    mutationFn: (data: { accountName?: string; maxUsersPerAccount?: number }) => 
+      adminApi.products.addAccount(productId, data),
+    onSuccess: () => {
+      setSuccess('Account added successfully');
+      setNewAccountName('');
+      setNewAccountMaxUsers('5');
+      refetchAccounts();
+      setTimeout(() => setSuccess(''), 3000);
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.error || 'Failed to add account');
+    },
+  });
+
+  const deleteAccountMutation = useMutation({
+    mutationFn: (accountId: number) => adminApi.products.deleteAccount(productId, accountId),
+    onSuccess: () => {
+      setSuccess('Account deleted successfully');
+      refetchAccounts();
+      setTimeout(() => setSuccess(''), 3000);
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.error || 'Failed to delete account');
+    },
+  });
+
+  const toggleAccountMutation = useMutation({
+    mutationFn: ({ accountId, isActive }: { accountId: number; isActive: boolean }) => 
+      adminApi.products.updateAccount(productId, accountId, { isActive }),
+    onSuccess: () => {
+      refetchAccounts();
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.error || 'Failed to update account');
+    },
   });
 
   const updateMutation = useMutation({
@@ -403,6 +468,165 @@ export default function AdminProductDetailPage() {
           </Button>
         </div>
       </form>
+
+      {/* Multi-Account Management Section */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span className="flex items-center">
+              <Users className="w-5 h-5 mr-2" />
+              Multi-Account Rotation
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => refetchAccounts()}
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Refresh
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-800 font-medium mb-2">How Multi-Account Rotation Works:</p>
+            <ul className="text-sm text-blue-700 list-disc list-inside space-y-1">
+              <li>Add multiple accounts for this product (e.g., Account 1, Account 2, etc.)</li>
+              <li>Each account can have its own session cookies captured via the extension</li>
+              <li>Users are automatically assigned to accounts in round-robin fashion</li>
+              <li>User 1 gets Account 1, User 2 gets Account 2, and so on</li>
+            </ul>
+          </div>
+
+          {/* Add New Account Form */}
+          <div className="flex items-end gap-4 p-4 bg-gray-50 rounded-lg">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Account Name</label>
+              <Input
+                type="text"
+                value={newAccountName}
+                onChange={(e) => setNewAccountName(e.target.value)}
+                placeholder="e.g., Account 1"
+              />
+            </div>
+            <div className="w-32">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Max Users</label>
+              <Input
+                type="number"
+                value={newAccountMaxUsers}
+                onChange={(e) => setNewAccountMaxUsers(e.target.value)}
+                min="1"
+              />
+            </div>
+            <Button
+              type="button"
+              onClick={() => addAccountMutation.mutate({
+                accountName: newAccountName || undefined,
+                maxUsersPerAccount: parseInt(newAccountMaxUsers, 10) || 5
+              })}
+              disabled={addAccountMutation.isPending}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add Account
+            </Button>
+          </div>
+
+          {/* Accounts List */}
+          {accounts.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p>No accounts configured yet.</p>
+              <p className="text-sm">Add accounts above to enable multi-account rotation.</p>
+              <p className="text-sm mt-2">Without accounts, the product will use the legacy single-session mode.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {accounts.map((account) => (
+                <div
+                  key={account.id}
+                  className={`p-4 border rounded-lg ${account.is_active ? 'bg-white border-gray-200' : 'bg-gray-100 border-gray-300'}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-medium text-gray-900">{account.account_name}</h4>
+                        {!account.is_active && (
+                          <span className="px-2 py-0.5 text-xs bg-gray-200 text-gray-600 rounded">Inactive</span>
+                        )}
+                        {account.session_last_updated && (
+                          <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded">
+                            Cookies Set
+                          </span>
+                        )}
+                        {!account.session_last_updated && (
+                          <span className="px-2 py-0.5 text-xs bg-yellow-100 text-yellow-700 rounded">
+                            No Cookies
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-1 text-sm text-gray-500 flex items-center gap-4">
+                        <span>
+                          Users: {account.current_users}/{account.max_users_per_account}
+                        </span>
+                        {account.session_expires_at && (
+                          <span>
+                            Expires: {new Date(account.session_expires_at).toLocaleDateString()}
+                          </span>
+                        )}
+                        {account.session_last_updated && (
+                          <span>
+                            Updated: {new Date(account.session_last_updated).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => toggleAccountMutation.mutate({
+                          accountId: account.id,
+                          isActive: !account.is_active
+                        })}
+                      >
+                        {account.is_active ? 'Deactivate' : 'Activate'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-red-600 border-red-300 hover:bg-red-50"
+                        onClick={() => {
+                          if (window.confirm(`Delete ${account.account_name}? This cannot be undone.`)) {
+                            deleteAccountMutation.mutate(account.id);
+                          }
+                        }}
+                        disabled={account.current_users > 0}
+                        title={account.current_users > 0 ? 'Cannot delete account with active users' : ''}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <p className="text-sm text-yellow-800 font-medium">To capture cookies for each account:</p>
+            <ol className="text-sm text-yellow-700 list-decimal list-inside mt-2 space-y-1">
+              <li>Log into the service with the account credentials</li>
+              <li>Open the GroupBuy extension (as admin)</li>
+              <li>Go to the &quot;Capture Cookies&quot; tab</li>
+              <li>Select this product and the specific account slot</li>
+              <li>Click &quot;Capture &amp; Save Cookies&quot;</li>
+            </ol>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

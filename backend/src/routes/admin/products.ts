@@ -567,4 +567,241 @@ router.get('/:id/session', authMiddleware, adminOnly, async (req: AuthenticatedR
   }
 });
 
+// ============ MULTI-ACCOUNT MANAGEMENT ENDPOINTS ============
+
+// Get all accounts for a product
+router.get('/:id/accounts', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    const result = await db.query(
+      `SELECT id, account_name, account_email, is_active, current_users, max_users_per_account,
+              session_expires_at, session_last_updated, created_at
+       FROM product_accounts
+       WHERE product_id = $1
+       ORDER BY id`,
+      [id]
+    );
+
+    res.json({
+      accounts: result.rows,
+      totalAccounts: result.rows.length
+    });
+  } catch (error) {
+    console.error('Error fetching product accounts:', error);
+    res.status(500).json({ error: 'Failed to fetch accounts' });
+  }
+});
+
+// Add a new account slot for a product
+router.post('/:id/accounts', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const { accountName, accountEmail, maxUsersPerAccount } = req.body;
+
+  try {
+    // Verify product exists
+    const productResult = await db.query<Product>(
+      'SELECT id, name FROM products WHERE id = $1',
+      [id]
+    );
+
+    if (productResult.rows.length === 0) {
+      res.status(404).json({ error: 'Product not found' });
+      return;
+    }
+
+    // Count existing accounts to generate default name
+    const countResult = await db.query(
+      'SELECT COUNT(*) as count FROM product_accounts WHERE product_id = $1',
+      [id]
+    );
+    const accountNumber = parseInt(countResult.rows[0].count, 10) + 1;
+
+    const result = await db.query(
+      `INSERT INTO product_accounts (product_id, account_name, account_email, max_users_per_account)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, account_name, account_email, is_active, current_users, max_users_per_account`,
+      [
+        id,
+        accountName || `Account ${accountNumber}`,
+        accountEmail || null,
+        maxUsersPerAccount || 5
+      ]
+    );
+
+    // Log the action
+    await db.query(
+      `INSERT INTO audit_logs (admin_id, action, resource_type, resource_id, new_value, ip_address, user_agent)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        req.user?.id,
+        'ACCOUNT_CREATED',
+        'product_account',
+        result.rows[0].id,
+        JSON.stringify({ productId: id, accountName: result.rows[0].account_name }),
+        req.ip,
+        req.headers['user-agent']
+      ]
+    );
+
+    res.json({
+      success: true,
+      account: result.rows[0],
+      message: `Account "${result.rows[0].account_name}" created successfully`
+    });
+  } catch (error) {
+    console.error('Error creating product account:', error);
+    res.status(500).json({ error: 'Failed to create account' });
+  }
+});
+
+// Update an account
+router.put('/:id/accounts/:accountId', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const { id, accountId } = req.params;
+  const { accountName, accountEmail, maxUsersPerAccount, isActive } = req.body;
+
+  try {
+    const result = await db.query(
+      `UPDATE product_accounts SET
+        account_name = COALESCE($1, account_name),
+        account_email = COALESCE($2, account_email),
+        max_users_per_account = COALESCE($3, max_users_per_account),
+        is_active = COALESCE($4, is_active),
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = $5 AND product_id = $6
+       RETURNING *`,
+      [accountName, accountEmail, maxUsersPerAccount, isActive, accountId, id]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Account not found' });
+      return;
+    }
+
+    res.json({
+      success: true,
+      account: result.rows[0],
+      message: 'Account updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating product account:', error);
+    res.status(500).json({ error: 'Failed to update account' });
+  }
+});
+
+// Delete an account
+router.delete('/:id/accounts/:accountId', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const { id, accountId } = req.params;
+
+  try {
+    // Check if account has active users
+    const accountResult = await db.query(
+      'SELECT current_users FROM product_accounts WHERE id = $1 AND product_id = $2',
+      [accountId, id]
+    );
+
+    if (accountResult.rows.length === 0) {
+      res.status(404).json({ error: 'Account not found' });
+      return;
+    }
+
+    if (accountResult.rows[0].current_users > 0) {
+      res.status(400).json({ error: 'Cannot delete account with active users. Deactivate it instead.' });
+      return;
+    }
+
+    await db.query(
+      'DELETE FROM product_accounts WHERE id = $1 AND product_id = $2',
+      [accountId, id]
+    );
+
+    res.json({
+      success: true,
+      message: 'Account deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting product account:', error);
+    res.status(500).json({ error: 'Failed to delete account' });
+  }
+});
+
+// Capture cookies for a specific account
+router.post('/:id/accounts/:accountId/capture-cookies', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const { id, accountId } = req.params;
+  const { cookies, domain, sessionExpiresAt } = req.body;
+
+  try {
+    if (!cookies || !Array.isArray(cookies) || cookies.length === 0) {
+      res.status(400).json({ error: 'Cookies array is required' });
+      return;
+    }
+
+    // Verify account exists
+    const accountResult = await db.query(
+      `SELECT pa.id, pa.account_name, p.name as product_name
+       FROM product_accounts pa
+       JOIN products p ON pa.product_id = p.id
+       WHERE pa.id = $1 AND pa.product_id = $2`,
+      [accountId, id]
+    );
+
+    if (accountResult.rows.length === 0) {
+      res.status(404).json({ error: 'Account not found' });
+      return;
+    }
+
+    const account = accountResult.rows[0];
+
+    // Encrypt and save cookies
+    const encryptedCookies = encrypt(JSON.stringify(cookies));
+
+    await db.query(
+      `UPDATE product_accounts SET
+        encrypted_session_cookies = $1,
+        session_expires_at = $2,
+        session_last_updated = $3,
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = $4`,
+      [
+        encryptedCookies,
+        sessionExpiresAt ? new Date(sessionExpiresAt) : null,
+        new Date(),
+        accountId
+      ]
+    );
+
+    // Also update the product's login_domain if provided
+    if (domain) {
+      await db.query(
+        'UPDATE products SET login_domain = $1 WHERE id = $2',
+        [domain, id]
+      );
+    }
+
+    // Log the action
+    await db.query(
+      `INSERT INTO audit_logs (admin_id, action, resource_type, resource_id, new_value, ip_address, user_agent)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        req.user?.id,
+        'ACCOUNT_COOKIES_CAPTURED',
+        'product_account',
+        accountId,
+        JSON.stringify({ cookieCount: cookies.length, domain, accountName: account.account_name }),
+        req.ip,
+        req.headers['user-agent']
+      ]
+    );
+
+    res.json({
+      success: true,
+      message: `Successfully saved ${cookies.length} cookies for ${account.account_name} (${account.product_name})`,
+      cookieCount: cookies.length
+    });
+  } catch (error) {
+    console.error('Error saving captured cookies for account:', error);
+    res.status(500).json({ error: 'Failed to save cookies' });
+  }
+});
+
 export default router;

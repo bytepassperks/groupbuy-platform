@@ -192,6 +192,43 @@ export async function initializeDatabase(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_refresh_tokens_hash ON refresh_tokens(token_hash);
     `);
 
+    // Product accounts table for multi-account rotation
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS product_accounts (
+        id SERIAL PRIMARY KEY,
+        product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
+        account_name VARCHAR(255) NOT NULL,
+        account_email VARCHAR(255),
+        encrypted_session_cookies TEXT,
+        session_expires_at TIMESTAMP,
+        session_last_updated TIMESTAMP,
+        is_active BOOLEAN DEFAULT true,
+        current_users INTEGER DEFAULT 0,
+        max_users_per_account INTEGER DEFAULT 5,
+        last_assigned_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_product_accounts_product ON product_accounts(product_id);
+      CREATE INDEX IF NOT EXISTS idx_product_accounts_active ON product_accounts(is_active);
+    `);
+
+    // User-account assignments for tracking which user is on which account
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_account_assignments (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
+        account_id INTEGER REFERENCES product_accounts(id) ON DELETE CASCADE,
+        assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP,
+        is_active BOOLEAN DEFAULT true,
+        UNIQUE(user_id, product_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_account_assignments_user ON user_account_assignments(user_id);
+      CREATE INDEX IF NOT EXISTS idx_user_account_assignments_account ON user_account_assignments(account_id);
+    `);
+
     console.log('Database tables initialized successfully');
   } catch (error) {
     console.error('Error initializing database:', error);
