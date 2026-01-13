@@ -23,6 +23,12 @@ const LOGIN_SELECTORS = {
     submitButton: 'button[type="submit"], .login-button',
     loginPageIndicator: '.login-form, [data-uia="login-page-container"]',
   },
+  'blinkist.com': {
+    emailField: 'input[name="email"], input[type="email"], #email',
+    passwordField: 'input[name="password"], input[type="password"], #password',
+    submitButton: 'button[type="submit"], input[type="submit"], .login-button',
+    loginPageIndicator: '.login-form, [data-testid="login-form"], form[action*="login"]',
+  },
 };
 
 function getHostname() {

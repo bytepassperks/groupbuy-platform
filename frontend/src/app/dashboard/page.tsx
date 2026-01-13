@@ -186,7 +186,18 @@ export default function DashboardPage() {
                                       <p className="text-xs text-gray-500">Access Code</p>
                                       <code className="text-sm font-mono bg-gray-100 px-2 py-1 rounded">{purchase.accessCode}</code>
                                     </div>
-                                    <Button variant="outline" size="sm">
+                                    <Button 
+                                      variant="outline" 
+                                      size="sm"
+                                      onClick={() => {
+                                        if (purchase.product?.loginUrl) {
+                                          window.open(purchase.product.loginUrl, '_blank');
+                                        } else {
+                                          alert('Login URL not configured for this product. Please contact support.');
+                                        }
+                                      }}
+                                      title="Open product login page"
+                                    >
                                       <ExternalLink className="w-4 h-4" />
                                     </Button>
                                   </div>

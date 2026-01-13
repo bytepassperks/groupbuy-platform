@@ -14,7 +14,8 @@
     "https://*.canva.com/*",
     "https://*.netflix.com/*",
     "https://*.grammarly.com/*",
-    "https://*.envato.com/*"
+    "https://*.envato.com/*",
+    "https://*.blinkist.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -33,7 +34,8 @@
         "https://*.semrush.com/*",
         "https://*.ahrefs.com/*",
         "https://*.canva.com/*",
-        "https://*.netflix.com/*"
+        "https://*.netflix.com/*",
+        "https://*.blinkist.com/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"

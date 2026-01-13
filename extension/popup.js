@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:5000/api';
+const API_URL = 'http://165.22.2.0/api';
 
 let currentSubscriptions = [];
 let selectedSubscription = null;

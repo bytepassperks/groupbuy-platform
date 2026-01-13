@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:5000/api';
+const API_URL = 'http://165.22.2.0/api';
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log('[GroupBuy] Extension installed');
@@ -16,6 +16,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     'ahrefs.com',
     'canva.com',
     'netflix.com',
+    'blinkist.com',
   ];
 
   const url = new URL(tab.url || '');
