@@ -26,12 +26,17 @@ export default function AdminUsersPage() {
   const [search, setSearch] = useState('');
   const [role, setRole] = useState('');
   const [status, setStatus] = useState('');
+  const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
-    if (!authLoading && (!isAuthenticated || user?.role !== 'admin')) {
+    setIsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (isHydrated && !authLoading && (!isAuthenticated || user?.role !== 'admin')) {
       router.push('/login');
     }
-  }, [authLoading, isAuthenticated, user, router]);
+  }, [isHydrated, authLoading, isAuthenticated, user, router]);
 
   const { data: usersData, isLoading } = useQuery({
     queryKey: ['admin-users', search, role, status],
@@ -60,7 +65,7 @@ export default function AdminUsersPage() {
 
   const users: User[] = usersData?.data?.users || [];
 
-  if (authLoading || !isAuthenticated || user?.role !== 'admin') {
+  if (!isHydrated || authLoading || !isAuthenticated || user?.role !== 'admin') {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -68,7 +73,7 @@ export default function AdminUsersPage() {
     );
   }
 
-  const handleSuspend = async (id: number, name: string) => {
+  const handleSuspend= async (id: number, name: string) => {
     if (confirm(`Are you sure you want to suspend "${name}"?`)) {
       deleteMutation.mutate(id);
     }

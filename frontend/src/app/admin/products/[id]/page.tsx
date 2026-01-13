@@ -30,6 +30,7 @@ export default function AdminProductDetailPage() {
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuthStore();
   const [showCredentials, setShowCredentials] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     category: '',
@@ -103,12 +104,16 @@ export default function AdminProductDetailPage() {
   }, [productData]);
 
   useEffect(() => {
-    if (!authLoading && (!user || user.role !== 'admin')) {
+    setIsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (isHydrated && !authLoading && (!user || user.role !== 'admin')) {
       router.push('/login');
     }
-  }, [user, authLoading, router]);
+  }, [isHydrated, user, authLoading, router]);
 
-  if (authLoading || isLoading) {
+  if (!isHydrated || authLoading || isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>

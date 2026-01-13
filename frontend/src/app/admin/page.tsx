@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
@@ -12,12 +12,17 @@ import { Users, Package, DollarSign, Activity, ArrowRight } from 'lucide-react';
 export default function AdminDashboard() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
+  const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
-    if (!authLoading && (!isAuthenticated || user?.role !== 'admin')) {
+    setIsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (isHydrated && !authLoading && (!isAuthenticated || user?.role !== 'admin')) {
       router.push('/login');
     }
-  }, [authLoading, isAuthenticated, user, router]);
+  }, [isHydrated, authLoading, isAuthenticated, user, router]);
 
   const { data: dashboardData, isLoading } = useQuery({
     queryKey: ['admin-dashboard'],
@@ -34,7 +39,7 @@ export default function AdminDashboard() {
     recentUsers: [],
   };
 
-  if (authLoading || !isAuthenticated || user?.role !== 'admin') {
+  if (!isHydrated || authLoading || !isAuthenticated || user?.role !== 'admin') {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>

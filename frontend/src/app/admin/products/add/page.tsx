@@ -15,6 +15,7 @@ export default function AddProductPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
   const [error, setError] = useState('');
+  const [isHydrated, setIsHydrated] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     category: '',
@@ -29,10 +30,14 @@ export default function AddProductPage() {
   });
 
   useEffect(() => {
-    if (!authLoading && (!isAuthenticated || user?.role !== 'admin')) {
+    setIsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (isHydrated && !authLoading && (!isAuthenticated || user?.role !== 'admin')) {
       router.push('/login');
     }
-  }, [authLoading, isAuthenticated, user, router]);
+  }, [isHydrated, authLoading, isAuthenticated, user, router]);
 
   const createMutation = useMutation({
     mutationFn: (data: typeof formData) => adminApi.products.create({
@@ -71,7 +76,7 @@ export default function AddProductPage() {
     createMutation.mutate(formData);
   };
 
-  if (authLoading || !isAuthenticated || user?.role !== 'admin') {
+  if (!isHydrated || authLoading || !isAuthenticated || user?.role !== 'admin') {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -79,7 +84,7 @@ export default function AddProductPage() {
     );
   }
 
-  const categories = ['SEO Tools', 'Design Tools', 'Marketing', 'Development', 'Streaming', 'Productivity', 'Other'];
+  const categories= ['SEO Tools', 'Design Tools', 'Marketing', 'Development', 'Streaming', 'Productivity', 'Other'];
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12">

@@ -29,12 +29,17 @@ export default function AdminProductsPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
-    if (!authLoading && (!isAuthenticated || user?.role !== 'admin')) {
+    setIsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (isHydrated && !authLoading && (!isAuthenticated || user?.role !== 'admin')) {
       router.push('/login');
     }
-  }, [authLoading, isAuthenticated, user, router]);
+  }, [isHydrated, authLoading, isAuthenticated, user, router]);
 
   const { data: productsData, isLoading } = useQuery({
     queryKey: ['admin-products', search, status],
@@ -51,7 +56,7 @@ export default function AdminProductsPage() {
 
   const products: Product[] = productsData?.data?.products || [];
 
-  if (authLoading || !isAuthenticated || user?.role !== 'admin') {
+  if (!isHydrated || authLoading || !isAuthenticated || user?.role !== 'admin') {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -59,7 +64,7 @@ export default function AdminProductsPage() {
     );
   }
 
-  const handleDelete = async (id: number, name: string) => {
+  const handleDelete= async (id: number, name: string) => {
     if (confirm(`Are you sure you want to delete "${name}"?`)) {
       deleteMutation.mutate(id);
     }
