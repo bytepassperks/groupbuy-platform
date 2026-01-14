@@ -175,38 +175,45 @@ async function launchChrome(productUrl, cookies, productName) {
         const testBrowser = await puppeteer.connect({ browserWSEndpoint: browserWsEndpoint });
         testBrowser.disconnect();
       } catch (err) {
+        console.log('[GroupBuy] Browser closed detected, cleaning up...');
         clearInterval(checkInterval);
         browser = null;
         browserWsEndpoint = null;
         
+        // Clear session on server
         if (userSession.accessCode) {
           try {
+            console.log('[GroupBuy] Logging out session...');
             await axios.post(`${API_BASE_URL}/extension/logout`, {
               accessCode: userSession.accessCode,
               productId: userSession.productId
             });
+            console.log('[GroupBuy] Session logged out successfully');
           } catch (logoutErr) {
-            console.error('Logout error:', logoutErr.message);
+            console.error('[GroupBuy] Logout error:', logoutErr.message);
           }
         }
         userSession = { accessCode: null, productId: null, productName: null };
         
+        // Clean up temp profile
         try {
           if (userDataDir) {
             fs.rmSync(userDataDir, { recursive: true, force: true });
             userDataDir = null;
           }
         } catch (cleanupErr) {
-          console.error('Failed to clean up:', cleanupErr.message);
+          console.error('[GroupBuy] Failed to clean up:', cleanupErr.message);
         }
 
+        // Notify renderer to reset UI and show login window
         if (loginWindow) {
+          loginWindow.webContents.send('browser-closed');
           loginWindow.show();
         } else {
           createLoginWindow();
         }
       }
-    }, 5000);
+    }, 3000);
 
     return true;
   } catch (err) {

@@ -339,6 +339,17 @@
       if (e.key === 'Enter') verifyCode();
     });
 
+    // Listen for browser closed event to reset UI
+    window.api.onBrowserClosed(() => {
+      console.log('Browser closed, resetting UI...');
+      // Reset the launch button
+      const btn = document.getElementById('launchBtn');
+      btn.disabled = false;
+      btn.textContent = 'Launch in Chrome';
+      // Show products view (user can launch again)
+      showProducts();
+    });
+
     init();
   </script>
 </body>
