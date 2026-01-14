@@ -41,7 +41,6 @@
     },
     "mac": {
       "target": [
-        "dmg",
         "zip"
       ],
       "icon": "assets/icon.icns",

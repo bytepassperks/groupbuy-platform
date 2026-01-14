@@ -356,7 +356,7 @@ export default function DashboardPage() {
                       <h3 className="font-semibold text-gray-900 mb-3">Download for your platform</h3>
                       <div className="space-y-3">
                         <a 
-                          href={`${desktopAppBaseUrl}/GroupBuy-Setup.exe`}
+                          href={`${desktopAppBaseUrl}/GroupBuy-Setup-1.0.0.exe`}
                           className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-colors"
                         >
                           <div className="flex items-center space-x-3">
@@ -366,17 +366,17 @@ export default function DashboardPage() {
                           <Download className="w-4 h-4 text-gray-400" />
                         </a>
                         <a 
-                          href={`${desktopAppBaseUrl}/GroupBuy.dmg`}
+                          href={`${desktopAppBaseUrl}/GroupBuy-1.0.0-mac.zip`}
                           className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-colors"
                         >
                           <div className="flex items-center space-x-3">
                             <Apple className="w-5 h-5 text-gray-800" />
-                            <span className="font-medium text-gray-900">macOS</span>
+                            <span className="font-medium text-gray-900">macOS (zip)</span>
                           </div>
                           <Download className="w-4 h-4 text-gray-400" />
                         </a>
                         <a 
-                          href={`${desktopAppBaseUrl}/GroupBuy.AppImage`}
+                          href={`${desktopAppBaseUrl}/GroupBuy-1.0.0.AppImage`}
                           className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-colors"
                         >
                           <div className="flex items-center space-x-3">
