@@ -16,6 +16,7 @@ let userSession = {
   productId: null,
   productName: null,
   productUrl: null,
+  allowedDomain: null, // Store the allowed domain for strict navigation control
   cookies: [],
   isLoggedIn: false
 };
@@ -38,7 +39,28 @@ const BLOCKED_PATTERNS = [
   /\/security/i,
   /\/password/i,
   /\/email-settings/i,
-  /\/notifications-settings/i
+  /\/notifications-settings/i,
+  /\/help/i,
+  /\/support/i,
+  /\/contact/i,
+  /\/faq/i,
+  /\/privacy/i,
+  /\/terms/i,
+  /\/legal/i
+];
+
+// Blocked external domains (help centers, support sites, etc.)
+const BLOCKED_DOMAIN_PATTERNS = [
+  /^support\./i,
+  /^help\./i,
+  /^faq\./i,
+  /^contact\./i,
+  /intercom/i,
+  /zendesk/i,
+  /freshdesk/i,
+  /helpscout/i,
+  /crisp/i,
+  /drift/i
 ];
 
 let mainWindow;
@@ -109,21 +131,37 @@ function createMainWindow(productUrl) {
     mainWindow.webContents.closeDevTools();
   });
 
-  // Block navigation to restricted pages
+  // Block navigation to restricted pages and external domains
   mainWindow.webContents.on('will-navigate', (event, url) => {
+    // First check if it's an external domain
+    if (isExternalDomain(url)) {
+      event.preventDefault();
+      showBlockedPageDialog('external');
+      return;
+    }
+    // Then check if it's a blocked URL pattern
     if (isBlockedUrl(url)) {
       event.preventDefault();
-      showBlockedPageDialog();
+      showBlockedPageDialog('restricted');
     }
   });
 
-  // Block new window requests to restricted pages
+  // Block ALL new window requests - never allow opening external windows
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (isBlockedUrl(url)) {
-      showBlockedPageDialog();
+    // Check if it's an external domain
+    if (isExternalDomain(url)) {
+      showBlockedPageDialog('external');
       return { action: 'deny' };
     }
-    return { action: 'allow' };
+    // Check if it's a blocked URL pattern
+    if (isBlockedUrl(url)) {
+      showBlockedPageDialog('restricted');
+      return { action: 'deny' };
+    }
+    // Even for allowed URLs, open them in the same window instead of a new one
+    // This prevents any possibility of opening external browser
+    mainWindow.loadURL(url);
+    return { action: 'deny' };
   });
 
   // Inject cookies before loading the page
@@ -152,12 +190,59 @@ function isBlockedUrl(url) {
   }
 }
 
-function showBlockedPageDialog() {
+function isExternalDomain(url) {
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname.toLowerCase();
+    
+    // If no allowed domain is set, block everything
+    if (!userSession.allowedDomain) {
+      return true;
+    }
+    
+    const allowedDomain = userSession.allowedDomain.toLowerCase();
+    
+    // Check if it's the exact allowed domain or www. version
+    if (hostname === allowedDomain || hostname === `www.${allowedDomain}`) {
+      return false;
+    }
+    
+    // Check if hostname ends with the allowed domain (for subdomains like app.blinkist.com)
+    // But block support/help subdomains
+    if (hostname.endsWith(`.${allowedDomain}`)) {
+      // Check if it's a blocked subdomain pattern
+      if (BLOCKED_DOMAIN_PATTERNS.some(pattern => pattern.test(hostname))) {
+        return true;
+      }
+      return false;
+    }
+    
+    // Any other domain is external
+    return true;
+  } catch {
+    return true;
+  }
+}
+
+function showBlockedPageDialog(reason = 'restricted') {
+  const messages = {
+    restricted: {
+      message: 'This page is not accessible',
+      detail: 'Settings, billing, and account pages are restricted for security reasons. Please contact support if you need assistance.'
+    },
+    external: {
+      message: 'External links are blocked',
+      detail: 'For security reasons, you cannot navigate to external websites. Please use the product within this application only.'
+    }
+  };
+  
+  const msg = messages[reason] || messages.restricted;
+  
   dialog.showMessageBox(mainWindow, {
     type: 'warning',
     title: 'Access Restricted',
-    message: 'This page is not accessible',
-    detail: 'Settings, billing, and account pages are restricted for security reasons. Please contact support if you need assistance.',
+    message: msg.message,
+    detail: msg.detail,
     buttons: ['OK']
   });
 }
@@ -332,6 +417,7 @@ async function logoutUser() {
     productId: null,
     productName: null,
     productUrl: null,
+    allowedDomain: null,
     cookies: [],
     isLoggedIn: false
   };
@@ -346,11 +432,27 @@ ipcMain.handle('launch-product', async (event, { accessCode, productId, productN
   const result = await getSessionCookies(accessCode, productId);
   
   if (result.success) {
+    // Extract the main domain from the product URL for strict navigation control
+    let allowedDomain = null;
+    try {
+      const urlObj = new URL(result.productUrl);
+      // Get the main domain (e.g., blinkist.com from www.blinkist.com or app.blinkist.com)
+      const hostParts = urlObj.hostname.split('.');
+      if (hostParts.length >= 2) {
+        allowedDomain = hostParts.slice(-2).join('.');
+      } else {
+        allowedDomain = urlObj.hostname;
+      }
+    } catch (err) {
+      console.error('Failed to parse product URL:', err.message);
+    }
+    
     userSession = {
       accessCode,
       productId,
       productName: result.productName || productName,
       productUrl: result.productUrl,
+      allowedDomain: allowedDomain,
       cookies: result.cookies,
       isLoggedIn: true
     };
