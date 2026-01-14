@@ -96,10 +96,11 @@ function rewriteUrls(content: string, baseUrl: string, proxyBase: string): strin
   return content;
 }
 
-// Proxy endpoint: /api/proxy/:product/*
-router.all('/:product/*', async (req: Request, res: Response) => {
+// Proxy endpoint: /api/proxy/:product/:path*
+router.all('/:product/:path*', async (req: Request, res: Response) => {
   const product = req.params.product as string;
-  const targetPath = '/' + (req.params[0] || '');
+  const pathParam = req.params.path || '';
+  const targetPath = '/' + pathParam;
   const accessCode = (req.query.ac as string) || req.cookies?.groupbuy_access_code;
 
   console.log(`[Proxy] Request: ${req.method} ${product}${targetPath}`);
