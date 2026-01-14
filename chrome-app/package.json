@@ -1,0 +1,43 @@
+{
+  "name": "groupbuy-chrome-launcher",
+  "version": "1.0.0",
+  "description": "GroupBuy Chrome Launcher - Secure product access via Chrome",
+  "main": "src/index.js",
+  "bin": {
+    "groupbuy": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "build:win": "pkg . --targets node18-win-x64 --output dist/GroupBuy-Chrome-Windows.exe",
+    "build:mac": "pkg . --targets node18-macos-x64 --output dist/GroupBuy-Chrome-macOS",
+    "build:linux": "pkg . --targets node18-linux-x64 --output dist/GroupBuy-Chrome-Linux",
+    "build:all": "npm run build:win && npm run build:mac && npm run build:linux"
+  },
+  "pkg": {
+    "assets": [
+      "src/**/*"
+    ],
+    "targets": [
+      "node18-win-x64",
+      "node18-macos-x64",
+      "node18-linux-x64"
+    ]
+  },
+  "keywords": [
+    "groupbuy",
+    "chrome",
+    "launcher"
+  ],
+  "author": "GroupBuy",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "puppeteer-core": "^24.35.0"
+  },
+  "devDependencies": {
+    "chalk": "^4.1.2",
+    "inquirer": "^8.2.6",
+    "ora": "^5.4.1",
+    "pkg": "^5.8.1"
+  }
+}
