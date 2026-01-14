@@ -7,7 +7,7 @@ import { useAuthStore } from '@/stores/auth';
 import { purchasesApi } from '@/lib/api';
 import Card, { CardContent, CardHeader } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import { Package, Calendar, Key, RefreshCw, ExternalLink, Download, Chrome, Puzzle, CheckCircle, ArrowRight, Copy, Shield, Monitor, Apple, Laptop } from 'lucide-react';
+import { Package, Calendar, Key, RefreshCw, ExternalLink, Download, Chrome, Puzzle, CheckCircle, ArrowRight, Copy, Shield, Monitor, Apple, Laptop, Smartphone } from 'lucide-react';
 
 interface Purchase {
   id: number;
@@ -388,6 +388,65 @@ export default function DashboardPage() {
                       </div>
                       <p className="text-xs text-gray-500 mt-3">
                         After downloading, run the app and enter your access code to get started.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {activePurchases.length > 0 && (
+              <Card className="mb-8 border-2 border-green-200 bg-gradient-to-r from-green-50 to-emerald-50">
+                <CardHeader>
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 bg-green-600 rounded-lg flex items-center justify-center">
+                      <Smartphone className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold text-gray-900">Mobile App (Android)</h2>
+                      <p className="text-sm text-gray-600">Access your subscriptions on the go</p>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-3">Mobile App Features</h3>
+                      <ul className="space-y-2 text-sm text-gray-600">
+                        <li className="flex items-start space-x-2">
+                          <Shield className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                          <span>Same security as desktop - credentials completely hidden</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <Shield className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                          <span>DevTools disabled - cannot inspect network requests</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <Shield className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                          <span>Settings/billing pages automatically blocked</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <Shield className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                          <span>Auto-logout when you close the app</span>
+                        </li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-3">Download Android App</h3>
+                      <div className="space-y-3">
+                        <a 
+                          href={`${desktopAppBaseUrl}/GroupBuy.apk`}
+                          className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-green-400 hover:bg-green-50 transition-colors"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <Smartphone className="w-5 h-5 text-green-600" />
+                            <span className="font-medium text-gray-900">Android APK</span>
+                          </div>
+                          <Download className="w-4 h-4 text-gray-400" />
+                        </a>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-3">
+                        Download the APK and install it on your Android device. You may need to enable &quot;Install from unknown sources&quot; in your device settings.
                       </p>
                     </div>
                   </div>
