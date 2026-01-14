@@ -39,8 +39,7 @@
   "author": "GroupBuy",
   "license": "MIT",
   "dependencies": {
-    "axios": "^1.13.2",
-    "puppeteer-core": "^24.35.0"
+    "axios": "^1.13.2"
   },
   "devDependencies": {
     "electron": "^39.2.7",

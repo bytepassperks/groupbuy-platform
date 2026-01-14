@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
-const puppeteer = require('puppeteer-core');
+const { spawn } = require('child_process');
 const axios = require('axios');
 const fs = require('fs');
 const os = require('os');
@@ -11,28 +11,13 @@ const API_BASE_URL = 'http://165.22.2.0/api';
 const APP_NAME = 'GroupBuy Chrome';
 
 let loginWindow = null;
-let browser = null;
+let chromeProcess = null;
 let userSession = {
   accessCode: null,
   productId: null,
   productName: null
 };
-
-const BLOCKED_PATTERNS = [
-  /\/settings/i, /\/account/i, /\/billing/i, /\/subscription/i,
-  /\/payment/i, /\/profile/i, /\/preferences/i, /\/admin/i,
-  /\/manage/i, /\/plan/i, /\/upgrade/i, /\/cancel/i,
-  /\/delete-account/i, /\/security/i, /\/password/i,
-  /\/help/i, /\/support/i, /\/contact/i, /\/faq/i,
-  /\/privacy/i, /\/terms/i, /\/legal/i
-];
-
-const BLOCKED_DOMAIN_PATTERNS = [
-  /^support\./i, /^help\./i, /^faq\./i, /^contact\./i,
-  /intercom/i, /zendesk/i, /freshdesk/i, /helpscout/i, /crisp/i, /drift/i
-];
-
-let allowedDomain = null;
+let tempExtensionDir = null;
 
 function findChrome() {
   const platform = os.platform();
@@ -71,6 +56,133 @@ function findChrome() {
   return null;
 }
 
+function createTempExtension(cookies, productUrl, allowedDomain) {
+  const extDir = path.join(os.tmpdir(), 'groupbuy-ext-' + Date.now());
+  fs.mkdirSync(extDir, { recursive: true });
+
+  const manifest = {
+    manifest_version: 3,
+    name: "GroupBuy Session",
+    version: "1.0",
+    permissions: ["cookies", "storage", "webNavigation", "tabs"],
+    host_permissions: ["<all_urls>"],
+    background: {
+      service_worker: "background.js"
+    }
+  };
+
+  fs.writeFileSync(path.join(extDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+
+  const blockedPatterns = [
+    '/settings', '/account', '/billing', '/subscription', '/payment',
+    '/profile', '/preferences', '/admin', '/manage', '/plan',
+    '/upgrade', '/cancel', '/delete-account', '/security', '/password',
+    '/help', '/support', '/contact', '/faq', '/privacy', '/terms', '/legal'
+  ];
+
+  const blockedDomains = [
+    'support.', 'help.', 'faq.', 'contact.',
+    'intercom', 'zendesk', 'freshdesk', 'helpscout', 'crisp', 'drift'
+  ];
+
+  const backgroundJs = `
+const CONFIG = {
+  cookies: ${JSON.stringify(cookies)},
+  productUrl: ${JSON.stringify(productUrl)},
+  allowedDomain: ${JSON.stringify(allowedDomain)},
+  blockedPatterns: ${JSON.stringify(blockedPatterns)},
+  blockedDomains: ${JSON.stringify(blockedDomains)}
+};
+
+let cookiesInjected = false;
+
+function isBlockedUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    const fullPath = urlObj.pathname.toLowerCase();
+    return CONFIG.blockedPatterns.some(pattern => fullPath.includes(pattern));
+  } catch {
+    return false;
+  }
+}
+
+function isExternalDomain(url) {
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname.toLowerCase();
+    const allowed = CONFIG.allowedDomain.toLowerCase();
+    
+    if (hostname === allowed || hostname === 'www.' + allowed) return false;
+    if (hostname.endsWith('.' + allowed)) {
+      if (CONFIG.blockedDomains.some(d => hostname.includes(d))) return true;
+      return false;
+    }
+    return true;
+  } catch {
+    return true;
+  }
+}
+
+async function injectCookies() {
+  if (cookiesInjected) return;
+  cookiesInjected = true;
+  
+  for (const cookie of CONFIG.cookies) {
+    try {
+      const cookieDetails = {
+        url: 'https://' + cookie.domain.replace(/^\\./, '') + '/',
+        name: cookie.name,
+        value: cookie.value,
+        domain: cookie.domain,
+        path: cookie.path || '/',
+        secure: cookie.secure !== false,
+        httpOnly: cookie.httpOnly || false
+      };
+      
+      if (cookie.sameSite) {
+        cookieDetails.sameSite = cookie.sameSite.toLowerCase();
+      }
+      
+      await chrome.cookies.set(cookieDetails);
+    } catch (err) {
+      console.error('Failed to set cookie:', cookie.name, err);
+    }
+  }
+  
+  setTimeout(() => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        chrome.tabs.update(tabs[0].id, { url: CONFIG.productUrl });
+      } else {
+        chrome.tabs.create({ url: CONFIG.productUrl });
+      }
+    });
+  }, 500);
+}
+
+chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+  if (details.frameId !== 0) return;
+  
+  const url = details.url;
+  if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url === 'about:blank') return;
+  
+  if (isBlockedUrl(url) || isExternalDomain(url)) {
+    chrome.tabs.update(details.tabId, { url: CONFIG.productUrl });
+  }
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  injectCookies();
+});
+
+injectCookies();
+`;
+
+  fs.writeFileSync(path.join(extDir, 'background.js'), backgroundJs);
+
+  return extDir;
+}
+
 function extractMainDomain(url) {
   try {
     const urlObj = new URL(url);
@@ -81,33 +193,6 @@ function extractMainDomain(url) {
     return urlObj.hostname;
   } catch {
     return null;
-  }
-}
-
-function isBlockedUrl(url) {
-  try {
-    const urlObj = new URL(url);
-    const fullPath = urlObj.pathname + urlObj.search;
-    return BLOCKED_PATTERNS.some(pattern => pattern.test(fullPath));
-  } catch {
-    return false;
-  }
-}
-
-function isExternalDomain(url) {
-  try {
-    const urlObj = new URL(url);
-    const hostname = urlObj.hostname.toLowerCase();
-    if (!allowedDomain) return true;
-    const allowed = allowedDomain.toLowerCase();
-    if (hostname === allowed || hostname === `www.${allowed}`) return false;
-    if (hostname.endsWith(`.${allowed}`)) {
-      if (BLOCKED_DOMAIN_PATTERNS.some(pattern => pattern.test(hostname))) return true;
-      return false;
-    }
-    return true;
-  } catch {
-    return true;
   }
 }
 
@@ -131,7 +216,7 @@ function createLoginWindow() {
 
   loginWindow.on('closed', () => {
     loginWindow = null;
-    if (!browser) {
+    if (!chromeProcess) {
       app.quit();
     }
   });
@@ -145,74 +230,29 @@ async function launchChrome(productUrl, cookies, productName) {
     return false;
   }
 
-  allowedDomain = extractMainDomain(productUrl);
+  const allowedDomain = extractMainDomain(productUrl);
   const userDataDir = path.join(os.tmpdir(), 'groupbuy-chrome-profile-' + Date.now());
+  
+  tempExtensionDir = createTempExtension(cookies, productUrl, allowedDomain);
+
+  const args = [
+    `--user-data-dir=${userDataDir}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--start-maximized',
+    `--load-extension=${tempExtensionDir}`,
+    'about:blank'
+  ];
 
   try {
-    browser = await puppeteer.launch({
-      executablePath: chromePath,
-      headless: false,
-      defaultViewport: null,
-      userDataDir: userDataDir,
-      args: [
-        '--start-maximized',
-        '--disable-infobars',
-        '--disable-extensions',
-        '--no-first-run',
-        '--no-default-browser-check',
-        `--window-name=GroupBuy - ${productName}`
-      ],
-      ignoreDefaultArgs: ['--enable-automation']
+    chromeProcess = spawn(chromePath, args, {
+      detached: false,
+      stdio: 'ignore'
     });
 
-    const pages = await browser.pages();
-    const page = pages[0] || await browser.newPage();
-
-    for (const cookie of cookies) {
-      try {
-        await page.setCookie({
-          name: cookie.name,
-          value: cookie.value,
-          domain: cookie.domain,
-          path: cookie.path || '/',
-          secure: cookie.secure || false,
-          httpOnly: cookie.httpOnly || false,
-          sameSite: cookie.sameSite || 'Lax'
-        });
-      } catch (err) {
-        console.error(`Failed to set cookie ${cookie.name}:`, err.message);
-      }
-    }
-
-    await page.setRequestInterception(true);
-    page.on('request', request => {
-      const url = request.url();
-      const resourceType = request.resourceType();
-
-      if (['image', 'stylesheet', 'font', 'media', 'script', 'xhr', 'fetch', 'websocket'].includes(resourceType)) {
-        request.continue();
-        return;
-      }
-
-      if (isBlockedUrl(url)) {
-        console.log(`Blocked restricted URL: ${url}`);
-        request.abort('blockedbyclient');
-        return;
-      }
-
-      if (isExternalDomain(url) && resourceType === 'document') {
-        console.log(`Blocked external domain: ${url}`);
-        request.abort('blockedbyclient');
-        return;
-      }
-
-      request.continue();
-    });
-
-    await page.goto(productUrl, { waitUntil: 'networkidle2' });
-
-    browser.on('disconnected', async () => {
-      browser = null;
+    chromeProcess.on('close', async (code) => {
+      chromeProcess = null;
+      
       if (userSession.accessCode) {
         try {
           await axios.post(`${API_BASE_URL}/extension/logout`, {
@@ -226,9 +266,13 @@ async function launchChrome(productUrl, cookies, productName) {
       userSession = { accessCode: null, productId: null, productName: null };
       
       try {
+        if (tempExtensionDir) {
+          fs.rmSync(tempExtensionDir, { recursive: true, force: true });
+          tempExtensionDir = null;
+        }
         fs.rmSync(userDataDir, { recursive: true, force: true });
       } catch (err) {
-        console.error('Failed to clean up profile:', err.message);
+        console.error('Failed to clean up:', err.message);
       }
 
       if (loginWindow) {
@@ -236,6 +280,11 @@ async function launchChrome(productUrl, cookies, productName) {
       } else {
         createLoginWindow();
       }
+    });
+
+    chromeProcess.on('error', (err) => {
+      console.error('Chrome process error:', err.message);
+      dialog.showErrorBox('Launch Error', `Failed to launch Chrome: ${err.message}`);
     });
 
     return true;
@@ -304,17 +353,17 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (!browser) {
+  if (!chromeProcess) {
     app.quit();
   }
 });
 
-app.on('before-quit', async () => {
-  if (browser) {
+app.on('before-quit', () => {
+  if (chromeProcess) {
     try {
-      await browser.close();
+      chromeProcess.kill();
     } catch (err) {
-      console.error('Error closing browser:', err.message);
+      console.error('Error killing Chrome:', err.message);
     }
   }
 });
