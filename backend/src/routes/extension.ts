@@ -593,7 +593,16 @@ router.post('/get-credentials-secure', async (req, res) => {
       ]
     );
 
-    // Log access
+    // Log access - update existing session or create new one
+    // First, close any existing open sessions for this user/product to prevent accumulation
+    await db.query(
+      `UPDATE access_logs 
+       SET logout_time = NOW() 
+       WHERE user_id = $1 AND product_id = $2 AND logout_time IS NULL`,
+      [purchase.user_id, purchase.prod_id]
+    );
+
+    // Now create a new session entry
     await db.query(
       `INSERT INTO access_logs
        (user_id, product_id, purchase_id, action, ip_address, device_fingerprint, login_time, status)
