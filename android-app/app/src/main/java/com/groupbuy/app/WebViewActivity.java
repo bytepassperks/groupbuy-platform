@@ -40,7 +40,14 @@ public class WebViewActivity extends AppCompatActivity {
         "/settings", "/account", "/billing", "/subscription", "/payment",
         "/profile", "/preferences", "/admin", "/manage", "/plan",
         "/upgrade", "/cancel", "/delete-account", "/security",
-        "/password", "/email-settings", "/notifications-settings"
+        "/password", "/email-settings", "/notifications-settings",
+        "/help", "/support", "/contact", "/faq", "/privacy", "/terms", "/legal"
+    );
+    
+    // Blocked external domain patterns (help centers, support sites, etc.)
+    private static final List<String> BLOCKED_DOMAIN_PATTERNS = Arrays.asList(
+        "support.", "help.", "faq.", "contact.",
+        "intercom", "zendesk", "freshdesk", "helpscout", "crisp", "drift"
     );
     
     private WebView webView;
@@ -51,6 +58,7 @@ public class WebViewActivity extends AppCompatActivity {
     private int productId;
     private String productName;
     private String loginUrl;
+    private String allowedDomain; // Store the allowed domain for strict navigation control
     
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -152,6 +160,9 @@ public class WebViewActivity extends AppCompatActivity {
             // Extract domain from URL
             String domain = extractDomain(url);
             
+            // Store the main domain for strict navigation control
+            allowedDomain = extractMainDomain(url);
+            
             for (int i = 0; i < cookies.length(); i++) {
                 JSONObject cookie = cookies.getJSONObject(i);
                 String name = cookie.optString("name");
@@ -203,6 +214,76 @@ public class WebViewActivity extends AppCompatActivity {
         return false;
     }
     
+    private boolean isExternalDomain(String url) {
+        try {
+            java.net.URL parsedUrl = new java.net.URL(url);
+            String hostname = parsedUrl.getHost().toLowerCase();
+            
+            // If no allowed domain is set, block everything
+            if (allowedDomain == null || allowedDomain.isEmpty()) {
+                return true;
+            }
+            
+            String allowed = allowedDomain.toLowerCase();
+            
+            // Check if it's the exact allowed domain or www. version
+            if (hostname.equals(allowed) || hostname.equals("www." + allowed)) {
+                return false;
+            }
+            
+            // Check if hostname ends with the allowed domain (for subdomains like app.blinkist.com)
+            // But block support/help subdomains
+            if (hostname.endsWith("." + allowed)) {
+                // Check if it's a blocked subdomain pattern
+                for (String pattern : BLOCKED_DOMAIN_PATTERNS) {
+                    if (hostname.contains(pattern)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            
+            // Any other domain is external
+            return true;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+    
+    private String extractMainDomain(String url) {
+        try {
+            java.net.URL parsedUrl = new java.net.URL(url);
+            String host = parsedUrl.getHost();
+            String[] parts = host.split("\\.");
+            if (parts.length >= 2) {
+                return parts[parts.length - 2] + "." + parts[parts.length - 1];
+            }
+            return host;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+    
+    private void showBlockedPage(String type) {
+        String title = "Access Restricted";
+        String message;
+        if ("external".equals(type)) {
+            message = "External websites are not accessible. Please stay within the product page.";
+        } else {
+            message = "This page is restricted for security reasons. Settings, billing, and account pages are not accessible.";
+        }
+        new AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("Go Back", (dialog, which) -> {
+                if (webView.canGoBack()) {
+                    webView.goBack();
+                }
+            })
+            .setCancelable(false)
+            .show();
+    }
+    
     private void showBlockedPage() {
         new AlertDialog.Builder(this)
             .setTitle("Access Restricted")
@@ -243,9 +324,15 @@ public class WebViewActivity extends AppCompatActivity {
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             String url = request.getUrl().toString();
             
-            // Block restricted URLs
+            // First check if it's an external domain
+            if (isExternalDomain(url)) {
+                showBlockedPage("external");
+                return true;
+            }
+            
+            // Then check if it's a blocked URL pattern
             if (isBlockedUrl(url)) {
-                showBlockedPage();
+                showBlockedPage("restricted");
                 return true;
             }
             
