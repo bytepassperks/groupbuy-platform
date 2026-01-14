@@ -58,25 +58,35 @@ function findChrome() {
   return null;
 }
 
-async function getDebuggerUrl(port, retries = 10) {
+async function getDebuggerUrl(port, retries = 20) {
+  console.log(`[GroupBuy] Waiting for Chrome debugger on port ${port}...`);
   for (let i = 0; i < retries; i++) {
     try {
       const response = await new Promise((resolve, reject) => {
         const req = http.get(`http://127.0.0.1:${port}/json`, (res) => {
           let data = '';
           res.on('data', chunk => data += chunk);
-          res.on('end', () => resolve(JSON.parse(data)));
+          res.on('end', () => {
+            try {
+              resolve(JSON.parse(data));
+            } catch (e) {
+              reject(e);
+            }
+          });
         });
         req.on('error', reject);
-        req.setTimeout(1000, () => { req.destroy(); reject(new Error('timeout')); });
+        req.setTimeout(2000, () => { req.destroy(); reject(new Error('timeout')); });
       });
       if (response && response.length > 0) {
+        console.log(`[GroupBuy] Got debugger URL: ${response[0].webSocketDebuggerUrl}`);
         return response[0].webSocketDebuggerUrl;
       }
     } catch (err) {
+      console.log(`[GroupBuy] Retry ${i + 1}/${retries}: ${err.message}`);
       await new Promise(r => setTimeout(r, 500));
     }
   }
+  console.error('[GroupBuy] Failed to get debugger URL after all retries');
   return null;
 }
 
@@ -84,56 +94,115 @@ async function injectCookiesViaCDP(wsUrl, cookies, productUrl) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
     let messageId = 1;
+    const pendingMessages = new Map();
+    let resolved = false;
+    
+    function sendCommand(method, params = {}) {
+      return new Promise((res, rej) => {
+        const id = messageId++;
+        pendingMessages.set(id, { resolve: res, reject: rej, method });
+        const msg = JSON.stringify({ id, method, params });
+        console.log(`[GroupBuy] Sending CDP: ${method}`);
+        ws.send(msg);
+        // Timeout for individual commands
+        setTimeout(() => {
+          if (pendingMessages.has(id)) {
+            pendingMessages.delete(id);
+            res(null); // Don't reject, just resolve with null
+          }
+        }, 5000);
+      });
+    }
+    
+    ws.on('message', (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.id && pendingMessages.has(msg.id)) {
+          const { resolve: res, method } = pendingMessages.get(msg.id);
+          pendingMessages.delete(msg.id);
+          console.log(`[GroupBuy] CDP response for ${method}:`, msg.error ? 'ERROR' : 'OK');
+          res(msg.result || msg);
+        }
+      } catch (err) {
+        console.error('[GroupBuy] CDP message parse error:', err);
+      }
+    });
     
     ws.on('open', async () => {
+      console.log('[GroupBuy] WebSocket connected to Chrome');
       try {
+        // Enable required domains first
+        await sendCommand('Network.enable');
+        await sendCommand('Page.enable');
+        
+        // Set all cookies with URL parameter for cross-domain setting
+        const domain = new URL(productUrl).hostname;
+        const cookieUrl = productUrl;
+        
+        console.log(`[GroupBuy] Setting ${cookies.length} cookies for ${domain}`);
         for (const cookie of cookies) {
           const cookieParams = {
             name: cookie.name,
             value: cookie.value,
-            domain: cookie.domain,
+            domain: cookie.domain || domain,
             path: cookie.path || '/',
             secure: cookie.secure !== false,
-            httpOnly: cookie.httpOnly || false
+            httpOnly: cookie.httpOnly || false,
+            url: cookieUrl // Important: specify URL for cross-domain cookie setting
           };
           
           if (cookie.sameSite) {
             cookieParams.sameSite = cookie.sameSite;
           }
           
-          ws.send(JSON.stringify({
-            id: messageId++,
-            method: 'Network.setCookie',
-            params: cookieParams
-          }));
+          await sendCommand('Network.setCookie', cookieParams);
         }
         
-        await new Promise(r => setTimeout(r, 500));
+        console.log('[GroupBuy] Cookies set, reloading page...');
+        // Reload the page to apply cookies
+        await sendCommand('Page.reload');
         
-        ws.send(JSON.stringify({
-          id: messageId++,
-          method: 'Page.navigate',
-          params: { url: productUrl }
-        }));
+        // Wait for page to reload
+        await new Promise(r => setTimeout(r, 2000));
         
-        await new Promise(r => setTimeout(r, 1000));
-        
+        console.log('[GroupBuy] CDP injection complete');
+        resolved = true;
         ws.close();
         resolve(true);
       } catch (err) {
-        ws.close();
-        reject(err);
+        console.error('[GroupBuy] CDP error:', err);
+        if (!resolved) {
+          resolved = true;
+          ws.close();
+          resolve(false); // Don't reject, just resolve false
+        }
       }
     });
     
     ws.on('error', (err) => {
-      reject(err);
+      console.error('[GroupBuy] WebSocket error:', err.message);
+      if (!resolved) {
+        resolved = true;
+        resolve(false); // Don't reject, just resolve false
+      }
+    });
+    
+    ws.on('close', () => {
+      console.log('[GroupBuy] WebSocket closed');
+      if (!resolved) {
+        resolved = true;
+        resolve(false);
+      }
     });
     
     setTimeout(() => {
-      ws.close();
-      resolve(false);
-    }, 10000);
+      if (!resolved) {
+        console.log('[GroupBuy] CDP timeout, closing connection');
+        resolved = true;
+        ws.close();
+        resolve(false);
+      }
+    }, 20000);
   });
 }
 
@@ -187,13 +256,17 @@ async function launchChrome(productUrl, cookies, productName) {
   userDataDir = path.join(os.tmpdir(), 'groupbuy-chrome-profile-' + Date.now());
   const debugPort = 9222 + Math.floor(Math.random() * 1000);
 
+  console.log(`[GroupBuy] Launching Chrome with debug port ${debugPort}`);
+  console.log(`[GroupBuy] Product URL: ${productUrl}`);
+  console.log(`[GroupBuy] Cookies to inject: ${cookies.length}`);
+
   const args = [
     `--user-data-dir=${userDataDir}`,
     `--remote-debugging-port=${debugPort}`,
     '--no-first-run',
     '--no-default-browser-check',
     '--start-maximized',
-    'about:blank'
+    productUrl // Launch directly to product URL instead of about:blank
   ];
 
   try {
