@@ -94,7 +94,7 @@ const CONFIG = {
   blockedDomains: ${JSON.stringify(blockedDomains)}
 };
 
-let cookiesInjected = false;
+let navigationStarted = false;
 
 function isBlockedUrl(url) {
   try {
@@ -123,9 +123,11 @@ function isExternalDomain(url) {
   }
 }
 
-async function injectCookies() {
-  if (cookiesInjected) return;
-  cookiesInjected = true;
+async function injectCookiesAndNavigate() {
+  if (navigationStarted) return;
+  navigationStarted = true;
+  
+  console.log('[GroupBuy] Starting cookie injection...');
   
   for (const cookie of CONFIG.cookies) {
     try {
@@ -144,20 +146,29 @@ async function injectCookies() {
       }
       
       await chrome.cookies.set(cookieDetails);
+      console.log('[GroupBuy] Set cookie:', cookie.name);
     } catch (err) {
-      console.error('Failed to set cookie:', cookie.name, err);
+      console.error('[GroupBuy] Failed to set cookie:', cookie.name, err);
     }
   }
   
-  setTimeout(() => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]) {
-        chrome.tabs.update(tabs[0].id, { url: CONFIG.productUrl });
-      } else {
-        chrome.tabs.create({ url: CONFIG.productUrl });
-      }
-    });
-  }, 500);
+  console.log('[GroupBuy] Cookies injected, navigating to:', CONFIG.productUrl);
+  
+  try {
+    const tabs = await chrome.tabs.query({});
+    console.log('[GroupBuy] Found tabs:', tabs.length);
+    
+    if (tabs.length > 0) {
+      await chrome.tabs.update(tabs[0].id, { url: CONFIG.productUrl });
+      console.log('[GroupBuy] Updated tab to product URL');
+    } else {
+      await chrome.tabs.create({ url: CONFIG.productUrl });
+      console.log('[GroupBuy] Created new tab with product URL');
+    }
+  } catch (err) {
+    console.error('[GroupBuy] Navigation error:', err);
+    chrome.tabs.create({ url: CONFIG.productUrl });
+  }
 }
 
 chrome.webNavigation.onBeforeNavigate.addListener((details) => {
@@ -167,15 +178,32 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
   if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url === 'about:blank') return;
   
   if (isBlockedUrl(url) || isExternalDomain(url)) {
+    console.log('[GroupBuy] Blocking navigation to:', url);
     chrome.tabs.update(details.tabId, { url: CONFIG.productUrl });
   }
 });
 
-chrome.runtime.onInstalled.addListener(() => {
-  injectCookies();
+chrome.tabs.onCreated.addListener((tab) => {
+  if (!navigationStarted) {
+    console.log('[GroupBuy] Tab created, starting injection');
+    injectCookiesAndNavigate();
+  }
 });
 
-injectCookies();
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url === 'about:blank' && !navigationStarted) {
+    console.log('[GroupBuy] Tab loaded about:blank, starting injection');
+    injectCookiesAndNavigate();
+  }
+});
+
+console.log('[GroupBuy] Extension loaded, waiting for tab...');
+setTimeout(() => {
+  if (!navigationStarted) {
+    console.log('[GroupBuy] Timeout reached, forcing injection');
+    injectCookiesAndNavigate();
+  }
+}, 1000);
 `;
 
   fs.writeFileSync(path.join(extDir, 'background.js'), backgroundJs);
