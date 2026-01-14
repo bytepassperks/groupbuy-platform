@@ -50,6 +50,7 @@
   "license": "MIT",
   "dependencies": {
     "axios": "^1.13.2",
+    "puppeteer-core": "^24.35.0",
     "ws": "^8.19.0"
   },
   "devDependencies": {

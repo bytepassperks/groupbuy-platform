@@ -1,11 +1,9 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
 const axios = require('axios');
 const fs = require('fs');
 const os = require('os');
-const http = require('http');
-const WebSocket = require('ws');
+const puppeteer = require('puppeteer-core');
 
 app.disableHardwareAcceleration();
 
@@ -13,7 +11,8 @@ const API_BASE_URL = 'http://165.22.2.0/api';
 const APP_NAME = 'GroupBuy Chrome';
 
 let loginWindow = null;
-let chromeProcess = null;
+let browser = null;
+let browserWsEndpoint = null;
 let userSession = {
   accessCode: null,
   productId: null,
@@ -58,166 +57,7 @@ function findChrome() {
   return null;
 }
 
-async function getDebuggerUrl(port, retries = 20) {
-  console.log(`[GroupBuy] Waiting for Chrome debugger on port ${port}...`);
-  for (let i = 0; i < retries; i++) {
-    try {
-      const response = await new Promise((resolve, reject) => {
-        const req = http.get(`http://127.0.0.1:${port}/json`, (res) => {
-          let data = '';
-          res.on('data', chunk => data += chunk);
-          res.on('end', () => {
-            try {
-              resolve(JSON.parse(data));
-            } catch (e) {
-              reject(e);
-            }
-          });
-        });
-        req.on('error', reject);
-        req.setTimeout(2000, () => { req.destroy(); reject(new Error('timeout')); });
-      });
-      if (response && response.length > 0) {
-        console.log(`[GroupBuy] Got debugger URL: ${response[0].webSocketDebuggerUrl}`);
-        return response[0].webSocketDebuggerUrl;
-      }
-    } catch (err) {
-      console.log(`[GroupBuy] Retry ${i + 1}/${retries}: ${err.message}`);
-      await new Promise(r => setTimeout(r, 500));
-    }
-  }
-  console.error('[GroupBuy] Failed to get debugger URL after all retries');
-  return null;
-}
-
-async function injectCookiesViaCDP(wsUrl, cookies, productUrl) {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(wsUrl);
-    let messageId = 1;
-    const pendingMessages = new Map();
-    let resolved = false;
-    
-    function sendCommand(method, params = {}) {
-      return new Promise((res, rej) => {
-        const id = messageId++;
-        pendingMessages.set(id, { resolve: res, reject: rej, method });
-        const msg = JSON.stringify({ id, method, params });
-        console.log(`[GroupBuy] Sending CDP: ${method}`);
-        ws.send(msg);
-        // Timeout for individual commands
-        setTimeout(() => {
-          if (pendingMessages.has(id)) {
-            pendingMessages.delete(id);
-            res(null); // Don't reject, just resolve with null
-          }
-        }, 5000);
-      });
-    }
-    
-    ws.on('message', (data) => {
-      try {
-        const msg = JSON.parse(data.toString());
-        if (msg.id && pendingMessages.has(msg.id)) {
-          const { resolve: res, method } = pendingMessages.get(msg.id);
-          pendingMessages.delete(msg.id);
-          console.log(`[GroupBuy] CDP response for ${method}:`, msg.error ? 'ERROR' : 'OK');
-          res(msg.result || msg);
-        }
-      } catch (err) {
-        console.error('[GroupBuy] CDP message parse error:', err);
-      }
-    });
-    
-    ws.on('open', async () => {
-      console.log('[GroupBuy] WebSocket connected to Chrome');
-      try {
-        // Enable required domains first
-        await sendCommand('Network.enable');
-        await sendCommand('Page.enable');
-        
-        // Set all cookies with URL parameter for cross-domain setting
-        const domain = new URL(productUrl).hostname;
-        const cookieUrl = productUrl;
-        
-        console.log(`[GroupBuy] Setting ${cookies.length} cookies for ${domain}`);
-        for (const cookie of cookies) {
-          const cookieParams = {
-            name: cookie.name,
-            value: cookie.value,
-            domain: cookie.domain || domain,
-            path: cookie.path || '/',
-            secure: cookie.secure !== false,
-            httpOnly: cookie.httpOnly || false,
-            url: cookieUrl // Important: specify URL for cross-domain cookie setting
-          };
-          
-          if (cookie.sameSite) {
-            cookieParams.sameSite = cookie.sameSite;
-          }
-          
-          await sendCommand('Network.setCookie', cookieParams);
-        }
-        
-        console.log('[GroupBuy] Cookies set, navigating to product URL...');
-        // Navigate to the product URL (cookies are already set)
-        await sendCommand('Page.navigate', { url: productUrl });
-        
-        // Wait for page to start loading
-        await new Promise(r => setTimeout(r, 3000));
-        
-        console.log('[GroupBuy] CDP injection complete');
-        resolved = true;
-        ws.close();
-        resolve(true);
-      } catch (err) {
-        console.error('[GroupBuy] CDP error:', err);
-        if (!resolved) {
-          resolved = true;
-          ws.close();
-          resolve(false); // Don't reject, just resolve false
-        }
-      }
-    });
-    
-    ws.on('error', (err) => {
-      console.error('[GroupBuy] WebSocket error:', err.message);
-      if (!resolved) {
-        resolved = true;
-        resolve(false); // Don't reject, just resolve false
-      }
-    });
-    
-    ws.on('close', () => {
-      console.log('[GroupBuy] WebSocket closed');
-      if (!resolved) {
-        resolved = true;
-        resolve(false);
-      }
-    });
-    
-    setTimeout(() => {
-      if (!resolved) {
-        console.log('[GroupBuy] CDP timeout, closing connection');
-        resolved = true;
-        ws.close();
-        resolve(false);
-      }
-    }, 20000);
-  });
-}
-
-function extractMainDomain(url) {
-  try {
-    const urlObj = new URL(url);
-    const hostParts = urlObj.hostname.split('.');
-    if (hostParts.length >= 2) {
-      return hostParts.slice(-2).join('.');
-    }
-    return urlObj.hostname;
-  } catch {
-    return null;
-  }
-}
+// No longer needed - using puppeteer-core instead of raw CDP
 
 function createLoginWindow() {
   loginWindow = new BrowserWindow({
@@ -239,7 +79,7 @@ function createLoginWindow() {
 
   loginWindow.on('closed', () => {
     loginWindow = null;
-    if (!chromeProcess) {
+    if (!browser) {
       app.quit();
     }
   });
@@ -254,77 +94,123 @@ async function launchChrome(productUrl, cookies, productName) {
   }
 
   userDataDir = path.join(os.tmpdir(), 'groupbuy-chrome-profile-' + Date.now());
-  const debugPort = 9222 + Math.floor(Math.random() * 1000);
 
-  console.log(`[GroupBuy] Launching Chrome with debug port ${debugPort}`);
+  console.log(`[GroupBuy] Launching Chrome with puppeteer-core...`);
   console.log(`[GroupBuy] Product URL: ${productUrl}`);
   console.log(`[GroupBuy] Cookies to inject: ${cookies.length}`);
 
-  const args = [
-    `--user-data-dir=${userDataDir}`,
-    `--remote-debugging-port=${debugPort}`,
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--start-maximized',
-    'about:blank' // Start with blank page, set cookies, then navigate
-  ];
-
   try {
-    chromeProcess = spawn(chromePath, args, {
-      detached: false,
-      stdio: 'ignore'
+    // Launch Chrome with puppeteer-core
+    // Key flags to avoid automation detection:
+    // - disable-blink-features=AutomationControlled removes navigator.webdriver
+    // - ignoreDefaultArgs removes --enable-automation flag
+    browser = await puppeteer.launch({
+      executablePath: chromePath,
+      headless: false,
+      userDataDir: userDataDir,
+      defaultViewport: null,
+      ignoreDefaultArgs: ['--enable-automation'],
+      args: [
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--start-maximized',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-infobars'
+      ]
     });
 
-    chromeProcess.on('close', async (code) => {
-      chromeProcess = null;
+    console.log('[GroupBuy] Chrome launched successfully');
+
+    // Save WebSocket endpoint for later monitoring
+    browserWsEndpoint = browser.wsEndpoint();
+
+    // Get the first page
+    const pages = await browser.pages();
+    const page = pages[0] || await browser.newPage();
+
+    // Set cookies before navigating
+    console.log(`[GroupBuy] Setting ${cookies.length} cookies...`);
+    
+    // Convert cookies to puppeteer format
+    const puppeteerCookies = cookies.map(cookie => {
+      const c = {
+        name: cookie.name,
+        value: cookie.value,
+        domain: cookie.domain,
+        path: cookie.path || '/',
+        secure: cookie.secure !== false,
+        httpOnly: cookie.httpOnly || false
+      };
       
-      if (userSession.accessCode) {
+      if (cookie.sameSite) {
+        const sameSite = cookie.sameSite.toLowerCase();
+        if (sameSite === 'strict') c.sameSite = 'Strict';
+        else if (sameSite === 'lax') c.sameSite = 'Lax';
+        else if (sameSite === 'none' || sameSite === 'no_restriction') c.sameSite = 'None';
+      }
+      
+      if (cookie.expirationDate) {
+        c.expires = cookie.expirationDate;
+      }
+      
+      return c;
+    });
+
+    // Set all cookies
+    await page.setCookie(...puppeteerCookies);
+    console.log('[GroupBuy] Cookies set successfully');
+
+    // Navigate to the product URL
+    console.log(`[GroupBuy] Navigating to ${productUrl}...`);
+    await page.goto(productUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    console.log('[GroupBuy] Navigation complete');
+
+    // Disconnect puppeteer but keep browser open
+    browser.disconnect();
+    console.log('[GroupBuy] Puppeteer disconnected, browser running independently');
+
+    // Monitor for browser close
+    const checkInterval = setInterval(async () => {
+      try {
+        const testBrowser = await puppeteer.connect({ browserWSEndpoint: browserWsEndpoint });
+        testBrowser.disconnect();
+      } catch (err) {
+        clearInterval(checkInterval);
+        browser = null;
+        browserWsEndpoint = null;
+        
+        if (userSession.accessCode) {
+          try {
+            await axios.post(`${API_BASE_URL}/extension/logout`, {
+              accessCode: userSession.accessCode,
+              productId: userSession.productId
+            });
+          } catch (logoutErr) {
+            console.error('Logout error:', logoutErr.message);
+          }
+        }
+        userSession = { accessCode: null, productId: null, productName: null };
+        
         try {
-          await axios.post(`${API_BASE_URL}/extension/logout`, {
-            accessCode: userSession.accessCode,
-            productId: userSession.productId
-          });
-        } catch (err) {
-          console.error('Logout error:', err.message);
+          if (userDataDir) {
+            fs.rmSync(userDataDir, { recursive: true, force: true });
+            userDataDir = null;
+          }
+        } catch (cleanupErr) {
+          console.error('Failed to clean up:', cleanupErr.message);
+        }
+
+        if (loginWindow) {
+          loginWindow.show();
+        } else {
+          createLoginWindow();
         }
       }
-      userSession = { accessCode: null, productId: null, productName: null };
-      
-      try {
-        if (userDataDir) {
-          fs.rmSync(userDataDir, { recursive: true, force: true });
-          userDataDir = null;
-        }
-      } catch (err) {
-        console.error('Failed to clean up:', err.message);
-      }
-
-      if (loginWindow) {
-        loginWindow.show();
-      } else {
-        createLoginWindow();
-      }
-    });
-
-    chromeProcess.on('error', (err) => {
-      console.error('Chrome process error:', err.message);
-      dialog.showErrorBox('Launch Error', `Failed to launch Chrome: ${err.message}`);
-    });
-
-    const wsUrl = await getDebuggerUrl(debugPort);
-    if (wsUrl) {
-      try {
-        await injectCookiesViaCDP(wsUrl, cookies, productUrl);
-      } catch (err) {
-        console.error('CDP injection error:', err.message);
-      }
-    } else {
-      console.error('Could not get debugger URL');
-    }
+    }, 5000);
 
     return true;
   } catch (err) {
-    console.error('Failed to launch Chrome:', err.message);
+    console.error('[GroupBuy] Failed to launch Chrome:', err.message);
     dialog.showErrorBox('Launch Error', `Failed to launch Chrome: ${err.message}`);
     return false;
   }
@@ -388,17 +274,17 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (!chromeProcess) {
+  if (!browser) {
     app.quit();
   }
 });
 
-app.on('before-quit', () => {
-  if (chromeProcess) {
+app.on('before-quit', async () => {
+  if (browser) {
     try {
-      chromeProcess.kill();
+      await browser.close();
     } catch (err) {
-      console.error('Error killing Chrome:', err.message);
+      console.error('Error closing browser:', err.message);
     }
   }
 });
