@@ -158,12 +158,12 @@ async function injectCookiesViaCDP(wsUrl, cookies, productUrl) {
           await sendCommand('Network.setCookie', cookieParams);
         }
         
-        console.log('[GroupBuy] Cookies set, reloading page...');
-        // Reload the page to apply cookies
-        await sendCommand('Page.reload');
+        console.log('[GroupBuy] Cookies set, navigating to product URL...');
+        // Navigate to the product URL (cookies are already set)
+        await sendCommand('Page.navigate', { url: productUrl });
         
-        // Wait for page to reload
-        await new Promise(r => setTimeout(r, 2000));
+        // Wait for page to start loading
+        await new Promise(r => setTimeout(r, 3000));
         
         console.log('[GroupBuy] CDP injection complete');
         resolved = true;
@@ -266,7 +266,7 @@ async function launchChrome(productUrl, cookies, productName) {
     '--no-first-run',
     '--no-default-browser-check',
     '--start-maximized',
-    productUrl // Launch directly to product URL instead of about:blank
+    'about:blank' // Start with blank page, set cookies, then navigate
   ];
 
   try {
