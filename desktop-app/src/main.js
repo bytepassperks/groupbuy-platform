@@ -105,7 +105,8 @@ function createMainWindow(productUrl) {
       preload: path.join(__dirname, 'preload-main.js'),
       devTools: false, // Disable DevTools
       webSecurity: true,
-      allowRunningInsecureContent: false
+      allowRunningInsecureContent: false,
+      autoplayPolicy: 'no-user-gesture-required' // Allow audio/video autoplay
     }
   });
 
