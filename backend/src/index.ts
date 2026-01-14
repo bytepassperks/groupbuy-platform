@@ -17,6 +17,7 @@ import webhooksRoutes from './routes/webhooks';
 import adminProductsRoutes from './routes/admin/products';
 import adminUsersRoutes from './routes/admin/users';
 import adminAnalyticsRoutes from './routes/admin/analytics';
+import proxyRoutes from './routes/proxy';
 
 dotenv.config();
 
@@ -109,6 +110,7 @@ app.use('/api/extension', extensionRoutes);
 app.use('/api/admin/products', adminProductsRoutes);
 app.use('/api/admin/users', adminUsersRoutes);
 app.use('/api/admin/analytics', adminAnalyticsRoutes);
+app.use('/api/proxy', proxyRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ 
