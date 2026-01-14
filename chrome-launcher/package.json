@@ -22,24 +22,35 @@
       "package.json"
     ],
     "win": {
-      "target": ["nsis"]
+      "target": [
+        "nsis"
+      ]
     },
     "mac": {
-      "target": ["zip"]
+      "target": [
+        "zip"
+      ]
     },
     "linux": {
-      "target": ["AppImage"]
+      "target": [
+        "AppImage"
+      ]
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     }
   },
-  "keywords": ["groupbuy", "chrome", "launcher"],
+  "keywords": [
+    "groupbuy",
+    "chrome",
+    "launcher"
+  ],
   "author": "GroupBuy",
   "license": "MIT",
   "dependencies": {
-    "axios": "^1.13.2"
+    "axios": "^1.13.2",
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "electron": "^39.2.7",

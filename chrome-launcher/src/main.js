@@ -4,6 +4,8 @@ const { spawn } = require('child_process');
 const axios = require('axios');
 const fs = require('fs');
 const os = require('os');
+const http = require('http');
+const WebSocket = require('ws');
 
 app.disableHardwareAcceleration();
 
@@ -17,7 +19,7 @@ let userSession = {
   productId: null,
   productName: null
 };
-let tempExtensionDir = null;
+let userDataDir = null;
 
 function findChrome() {
   const platform = os.platform();
@@ -56,159 +58,83 @@ function findChrome() {
   return null;
 }
 
-function createTempExtension(cookies, productUrl, allowedDomain) {
-  const extDir = path.join(os.tmpdir(), 'groupbuy-ext-' + Date.now());
-  fs.mkdirSync(extDir, { recursive: true });
-
-  const manifest = {
-    manifest_version: 3,
-    name: "GroupBuy Session",
-    version: "1.0",
-    permissions: ["cookies", "storage", "webNavigation", "tabs"],
-    host_permissions: ["<all_urls>"],
-    background: {
-      service_worker: "background.js"
-    }
-  };
-
-  fs.writeFileSync(path.join(extDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
-
-  const blockedPatterns = [
-    '/settings', '/account', '/billing', '/subscription', '/payment',
-    '/profile', '/preferences', '/admin', '/manage', '/plan',
-    '/upgrade', '/cancel', '/delete-account', '/security', '/password',
-    '/help', '/support', '/contact', '/faq', '/privacy', '/terms', '/legal'
-  ];
-
-  const blockedDomains = [
-    'support.', 'help.', 'faq.', 'contact.',
-    'intercom', 'zendesk', 'freshdesk', 'helpscout', 'crisp', 'drift'
-  ];
-
-  const backgroundJs = `
-const CONFIG = {
-  cookies: ${JSON.stringify(cookies)},
-  productUrl: ${JSON.stringify(productUrl)},
-  allowedDomain: ${JSON.stringify(allowedDomain)},
-  blockedPatterns: ${JSON.stringify(blockedPatterns)},
-  blockedDomains: ${JSON.stringify(blockedDomains)}
-};
-
-let navigationStarted = false;
-
-function isBlockedUrl(url) {
-  try {
-    const urlObj = new URL(url);
-    const fullPath = urlObj.pathname.toLowerCase();
-    return CONFIG.blockedPatterns.some(pattern => fullPath.includes(pattern));
-  } catch {
-    return false;
-  }
-}
-
-function isExternalDomain(url) {
-  try {
-    const urlObj = new URL(url);
-    const hostname = urlObj.hostname.toLowerCase();
-    const allowed = CONFIG.allowedDomain.toLowerCase();
-    
-    if (hostname === allowed || hostname === 'www.' + allowed) return false;
-    if (hostname.endsWith('.' + allowed)) {
-      if (CONFIG.blockedDomains.some(d => hostname.includes(d))) return true;
-      return false;
-    }
-    return true;
-  } catch {
-    return true;
-  }
-}
-
-async function injectCookiesAndNavigate() {
-  if (navigationStarted) return;
-  navigationStarted = true;
-  
-  console.log('[GroupBuy] Starting cookie injection...');
-  
-  for (const cookie of CONFIG.cookies) {
+async function getDebuggerUrl(port, retries = 10) {
+  for (let i = 0; i < retries; i++) {
     try {
-      const cookieDetails = {
-        url: 'https://' + cookie.domain.replace(/^\\./, '') + '/',
-        name: cookie.name,
-        value: cookie.value,
-        domain: cookie.domain,
-        path: cookie.path || '/',
-        secure: cookie.secure !== false,
-        httpOnly: cookie.httpOnly || false
-      };
-      
-      if (cookie.sameSite) {
-        cookieDetails.sameSite = cookie.sameSite.toLowerCase();
+      const response = await new Promise((resolve, reject) => {
+        const req = http.get(`http://127.0.0.1:${port}/json`, (res) => {
+          let data = '';
+          res.on('data', chunk => data += chunk);
+          res.on('end', () => resolve(JSON.parse(data)));
+        });
+        req.on('error', reject);
+        req.setTimeout(1000, () => { req.destroy(); reject(new Error('timeout')); });
+      });
+      if (response && response.length > 0) {
+        return response[0].webSocketDebuggerUrl;
       }
-      
-      await chrome.cookies.set(cookieDetails);
-      console.log('[GroupBuy] Set cookie:', cookie.name);
     } catch (err) {
-      console.error('[GroupBuy] Failed to set cookie:', cookie.name, err);
+      await new Promise(r => setTimeout(r, 500));
     }
   }
-  
-  console.log('[GroupBuy] Cookies injected, navigating to:', CONFIG.productUrl);
-  
-  try {
-    const tabs = await chrome.tabs.query({});
-    console.log('[GroupBuy] Found tabs:', tabs.length);
-    
-    if (tabs.length > 0) {
-      await chrome.tabs.update(tabs[0].id, { url: CONFIG.productUrl });
-      console.log('[GroupBuy] Updated tab to product URL');
-    } else {
-      await chrome.tabs.create({ url: CONFIG.productUrl });
-      console.log('[GroupBuy] Created new tab with product URL');
-    }
-  } catch (err) {
-    console.error('[GroupBuy] Navigation error:', err);
-    chrome.tabs.create({ url: CONFIG.productUrl });
-  }
+  return null;
 }
 
-chrome.webNavigation.onBeforeNavigate.addListener((details) => {
-  if (details.frameId !== 0) return;
-  
-  const url = details.url;
-  if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url === 'about:blank') return;
-  
-  if (isBlockedUrl(url) || isExternalDomain(url)) {
-    console.log('[GroupBuy] Blocking navigation to:', url);
-    chrome.tabs.update(details.tabId, { url: CONFIG.productUrl });
-  }
-});
-
-chrome.tabs.onCreated.addListener((tab) => {
-  if (!navigationStarted) {
-    console.log('[GroupBuy] Tab created, starting injection');
-    injectCookiesAndNavigate();
-  }
-});
-
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url === 'about:blank' && !navigationStarted) {
-    console.log('[GroupBuy] Tab loaded about:blank, starting injection');
-    injectCookiesAndNavigate();
-  }
-});
-
-console.log('[GroupBuy] Extension loaded, waiting for tab...');
-setTimeout(() => {
-  if (!navigationStarted) {
-    console.log('[GroupBuy] Timeout reached, forcing injection');
-    injectCookiesAndNavigate();
-  }
-}, 1000);
-`;
-
-  fs.writeFileSync(path.join(extDir, 'background.js'), backgroundJs);
-
-  return extDir;
+async function injectCookiesViaCDP(wsUrl, cookies, productUrl) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(wsUrl);
+    let messageId = 1;
+    
+    ws.on('open', async () => {
+      try {
+        for (const cookie of cookies) {
+          const cookieParams = {
+            name: cookie.name,
+            value: cookie.value,
+            domain: cookie.domain,
+            path: cookie.path || '/',
+            secure: cookie.secure !== false,
+            httpOnly: cookie.httpOnly || false
+          };
+          
+          if (cookie.sameSite) {
+            cookieParams.sameSite = cookie.sameSite;
+          }
+          
+          ws.send(JSON.stringify({
+            id: messageId++,
+            method: 'Network.setCookie',
+            params: cookieParams
+          }));
+        }
+        
+        await new Promise(r => setTimeout(r, 500));
+        
+        ws.send(JSON.stringify({
+          id: messageId++,
+          method: 'Page.navigate',
+          params: { url: productUrl }
+        }));
+        
+        await new Promise(r => setTimeout(r, 1000));
+        
+        ws.close();
+        resolve(true);
+      } catch (err) {
+        ws.close();
+        reject(err);
+      }
+    });
+    
+    ws.on('error', (err) => {
+      reject(err);
+    });
+    
+    setTimeout(() => {
+      ws.close();
+      resolve(false);
+    }, 10000);
+  });
 }
 
 function extractMainDomain(url) {
@@ -258,17 +184,15 @@ async function launchChrome(productUrl, cookies, productName) {
     return false;
   }
 
-  const allowedDomain = extractMainDomain(productUrl);
-  const userDataDir = path.join(os.tmpdir(), 'groupbuy-chrome-profile-' + Date.now());
-  
-  tempExtensionDir = createTempExtension(cookies, productUrl, allowedDomain);
+  userDataDir = path.join(os.tmpdir(), 'groupbuy-chrome-profile-' + Date.now());
+  const debugPort = 9222 + Math.floor(Math.random() * 1000);
 
   const args = [
     `--user-data-dir=${userDataDir}`,
+    `--remote-debugging-port=${debugPort}`,
     '--no-first-run',
     '--no-default-browser-check',
     '--start-maximized',
-    `--load-extension=${tempExtensionDir}`,
     'about:blank'
   ];
 
@@ -294,11 +218,10 @@ async function launchChrome(productUrl, cookies, productName) {
       userSession = { accessCode: null, productId: null, productName: null };
       
       try {
-        if (tempExtensionDir) {
-          fs.rmSync(tempExtensionDir, { recursive: true, force: true });
-          tempExtensionDir = null;
+        if (userDataDir) {
+          fs.rmSync(userDataDir, { recursive: true, force: true });
+          userDataDir = null;
         }
-        fs.rmSync(userDataDir, { recursive: true, force: true });
       } catch (err) {
         console.error('Failed to clean up:', err.message);
       }
@@ -314,6 +237,17 @@ async function launchChrome(productUrl, cookies, productName) {
       console.error('Chrome process error:', err.message);
       dialog.showErrorBox('Launch Error', `Failed to launch Chrome: ${err.message}`);
     });
+
+    const wsUrl = await getDebuggerUrl(debugPort);
+    if (wsUrl) {
+      try {
+        await injectCookiesViaCDP(wsUrl, cookies, productUrl);
+      } catch (err) {
+        console.error('CDP injection error:', err.message);
+      }
+    } else {
+      console.error('Could not get debugger URL');
+    }
 
     return true;
   } catch (err) {
