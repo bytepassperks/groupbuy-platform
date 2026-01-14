@@ -1,0 +1,49 @@
+{
+  "name": "groupbuy-chrome-launcher",
+  "version": "1.0.0",
+  "description": "GroupBuy Chrome Launcher - Secure product access via Chrome",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "build:all": "electron-builder --win --mac --linux"
+  },
+  "build": {
+    "appId": "com.groupbuy.chrome-launcher",
+    "productName": "GroupBuy Chrome",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": ["nsis"]
+    },
+    "mac": {
+      "target": ["zip"]
+    },
+    "linux": {
+      "target": ["AppImage"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "keywords": ["groupbuy", "chrome", "launcher"],
+  "author": "GroupBuy",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "puppeteer-core": "^24.35.0"
+  },
+  "devDependencies": {
+    "electron": "^39.2.7",
+    "electron-builder": "^26.4.0"
+  }
+}

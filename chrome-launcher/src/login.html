@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GroupBuy Chrome</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 16px;
+      padding: 40px;
+      width: 100%;
+      max-width: 380px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    .logo {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .logo h1 {
+      font-size: 28px;
+      color: #333;
+      margin-bottom: 8px;
+    }
+    .logo p {
+      color: #666;
+      font-size: 14px;
+    }
+    .chrome-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #f0f0f0;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      color: #555;
+      margin-top: 10px;
+    }
+    .chrome-badge.found { background: #e8f5e9; color: #2e7d32; }
+    .chrome-badge.not-found { background: #ffebee; color: #c62828; }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: #333;
+    }
+    input {
+      width: 100%;
+      padding: 14px 16px;
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 16px;
+      transition: border-color 0.2s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    button {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .error {
+      background: #ffebee;
+      color: #c62828;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      display: none;
+    }
+    .products {
+      display: none;
+    }
+    .product-list {
+      max-height: 250px;
+      overflow-y: auto;
+    }
+    .product-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .product-item:hover {
+      border-color: #667eea;
+      background: #f8f9ff;
+    }
+    .product-item.selected {
+      border-color: #667eea;
+      background: #f0f3ff;
+    }
+    .product-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      object-fit: cover;
+      background: #f0f0f0;
+    }
+    .product-info {
+      flex: 1;
+    }
+    .product-name {
+      font-weight: 600;
+      color: #333;
+    }
+    .product-expires {
+      font-size: 12px;
+      color: #666;
+    }
+    .back-btn {
+      background: #f0f0f0;
+      color: #333;
+      margin-top: 10px;
+    }
+    .back-btn:hover:not(:disabled) {
+      background: #e0e0e0;
+      box-shadow: none;
+      transform: none;
+    }
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      border-top-color: transparent;
+      animation: spin 0.8s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .info-text {
+      text-align: center;
+      font-size: 12px;
+      color: #888;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">
+      <h1>GroupBuy Chrome</h1>
+      <p>Secure product access via Chrome</p>
+      <div id="chromeBadge" class="chrome-badge">Checking Chrome...</div>
+    </div>
+
+    <div id="error" class="error"></div>
+
+    <div id="loginForm">
+      <div class="form-group">
+        <label for="accessCode">Access Code</label>
+        <input type="text" id="accessCode" placeholder="Enter your access code" autocomplete="off">
+      </div>
+      <button id="verifyBtn" onclick="verifyCode()">Continue</button>
+    </div>
+
+    <div id="products" class="products">
+      <div class="form-group">
+        <label>Select Product</label>
+        <div id="productList" class="product-list"></div>
+      </div>
+      <button id="launchBtn" onclick="launchProduct()" disabled>Launch in Chrome</button>
+      <button class="back-btn" onclick="showLogin()">Back</button>
+    </div>
+
+    <p class="info-text">Your real Chrome browser will open with secure access</p>
+  </div>
+
+  <script>
+    let products = [];
+    let selectedProduct = null;
+    let accessCode = '';
+
+    async function init() {
+      const result = await window.api.checkChrome();
+      const badge = document.getElementById('chromeBadge');
+      if (result.found) {
+        badge.textContent = 'Chrome found';
+        badge.className = 'chrome-badge found';
+      } else {
+        badge.textContent = 'Chrome not found - Please install Chrome';
+        badge.className = 'chrome-badge not-found';
+      }
+    }
+
+    function showError(message) {
+      const error = document.getElementById('error');
+      error.textContent = message;
+      error.style.display = 'block';
+    }
+
+    function hideError() {
+      document.getElementById('error').style.display = 'none';
+    }
+
+    function showLogin() {
+      document.getElementById('loginForm').style.display = 'block';
+      document.getElementById('products').style.display = 'none';
+      hideError();
+    }
+
+    function showProducts() {
+      document.getElementById('loginForm').style.display = 'none';
+      document.getElementById('products').style.display = 'block';
+      hideError();
+    }
+
+    async function verifyCode() {
+      hideError();
+      accessCode = document.getElementById('accessCode').value.trim();
+      if (!accessCode) {
+        showError('Please enter your access code');
+        return;
+      }
+
+      const btn = document.getElementById('verifyBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loading"></span>Verifying...';
+
+      try {
+        const result = await window.api.verifyAccessCode(accessCode);
+        if (result.success) {
+          products = result.products;
+          renderProducts();
+          showProducts();
+        } else {
+          showError(result.error || 'Invalid access code');
+        }
+      } catch (err) {
+        showError('Failed to verify access code');
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Continue';
+    }
+
+    function renderProducts() {
+      const list = document.getElementById('productList');
+      list.innerHTML = '';
+      selectedProduct = null;
+      document.getElementById('launchBtn').disabled = true;
+
+      products.forEach(product => {
+        const item = document.createElement('div');
+        item.className = 'product-item';
+        item.onclick = () => selectProduct(product, item);
+        
+        const expires = product.expiresAt ? new Date(product.expiresAt).toLocaleDateString() : 'N/A';
+        
+        item.innerHTML = `
+          <img class="product-icon" src="${product.iconUrl || ''}" onerror="this.style.display='none'">
+          <div class="product-info">
+            <div class="product-name">${product.name}</div>
+            <div class="product-expires">Expires: ${expires}</div>
+          </div>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    function selectProduct(product, element) {
+      document.querySelectorAll('.product-item').forEach(el => el.classList.remove('selected'));
+      element.classList.add('selected');
+      selectedProduct = product;
+      document.getElementById('launchBtn').disabled = false;
+    }
+
+    async function launchProduct() {
+      if (!selectedProduct) return;
+      hideError();
+
+      const btn = document.getElementById('launchBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loading"></span>Launching Chrome...';
+
+      try {
+        const result = await window.api.launchProduct({
+          accessCode: accessCode,
+          productId: selectedProduct.id,
+          productName: selectedProduct.name
+        });
+
+        if (!result.success) {
+          showError(result.error || 'Failed to launch product');
+          btn.disabled = false;
+          btn.textContent = 'Launch in Chrome';
+        }
+      } catch (err) {
+        showError('Failed to launch Chrome');
+        btn.disabled = false;
+        btn.textContent = 'Launch in Chrome';
+      }
+    }
+
+    document.getElementById('accessCode').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') verifyCode();
+    });
+
+    init();
+  </script>
+</body>
+</html>
