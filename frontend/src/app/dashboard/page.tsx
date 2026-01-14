@@ -7,7 +7,7 @@ import { useAuthStore } from '@/stores/auth';
 import { purchasesApi } from '@/lib/api';
 import Card, { CardContent, CardHeader } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import { Package, Calendar, Key, RefreshCw, ExternalLink, Download, Chrome, Puzzle, CheckCircle, ArrowRight, Copy, Shield } from 'lucide-react';
+import { Package, Calendar, Key, RefreshCw, ExternalLink, Download, Chrome, Puzzle, CheckCircle, ArrowRight, Copy, Shield, Monitor, Apple, Laptop } from 'lucide-react';
 
 interface Purchase {
   id: number;
@@ -111,6 +111,7 @@ export default function DashboardPage() {
     };
 
     const extensionDownloadUrl = 'https://github.com/bytepassperks/groupbuy-platform/archive/refs/heads/devin/1768279360-groupbuy-platform.zip';
+    const desktopAppBaseUrl = 'https://github.com/bytepassperks/groupbuy-platform/releases/latest/download';
 
     return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -309,6 +310,85 @@ export default function DashboardPage() {
                       >
                         View Documentation →
                       </a>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {activePurchases.length > 0 && (
+              <Card className="mb-8 border-2 border-purple-200 bg-gradient-to-r from-purple-50 to-pink-50">
+                <CardHeader>
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 bg-purple-600 rounded-lg flex items-center justify-center">
+                      <Monitor className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold text-gray-900">Desktop App (Recommended)</h2>
+                      <p className="text-sm text-gray-600">Maximum security with our standalone desktop application</p>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-3">Why use the Desktop App?</h3>
+                      <ul className="space-y-2 text-sm text-gray-600">
+                        <li className="flex items-start space-x-2">
+                          <Shield className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                          <span>Credentials are completely hidden - no way to view or steal them</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <Shield className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                          <span>DevTools disabled - cannot inspect network requests</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <Shield className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                          <span>Settings/billing pages automatically blocked</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <Shield className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                          <span>Auto-logout when you close the app</span>
+                        </li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-3">Download for your platform</h3>
+                      <div className="space-y-3">
+                        <a 
+                          href={`${desktopAppBaseUrl}/GroupBuy-Setup.exe`}
+                          className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-colors"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <Monitor className="w-5 h-5 text-blue-600" />
+                            <span className="font-medium text-gray-900">Windows</span>
+                          </div>
+                          <Download className="w-4 h-4 text-gray-400" />
+                        </a>
+                        <a 
+                          href={`${desktopAppBaseUrl}/GroupBuy.dmg`}
+                          className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-colors"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <Apple className="w-5 h-5 text-gray-800" />
+                            <span className="font-medium text-gray-900">macOS</span>
+                          </div>
+                          <Download className="w-4 h-4 text-gray-400" />
+                        </a>
+                        <a 
+                          href={`${desktopAppBaseUrl}/GroupBuy.AppImage`}
+                          className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-colors"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <Laptop className="w-5 h-5 text-orange-600" />
+                            <span className="font-medium text-gray-900">Linux</span>
+                          </div>
+                          <Download className="w-4 h-4 text-gray-400" />
+                        </a>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-3">
+                        After downloading, run the app and enter your access code to get started.
+                      </p>
                     </div>
                   </div>
                 </CardContent>
