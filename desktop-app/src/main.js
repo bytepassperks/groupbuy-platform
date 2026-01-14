@@ -3,6 +3,9 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 
+// Disable hardware acceleration BEFORE app is ready (must be called early)
+app.disableHardwareAcceleration();
+
 // Configuration
 const API_BASE_URL = process.env.API_URL || 'http://165.22.2.0/api';
 const APP_NAME = 'GroupBuy';
@@ -379,9 +382,6 @@ ipcMain.handle('logout', async () => {
 
 // App lifecycle
 app.whenReady().then(() => {
-  // Disable hardware acceleration for better compatibility
-  app.disableHardwareAcceleration();
-  
   createLoginWindow();
 
   app.on('activate', () => {
