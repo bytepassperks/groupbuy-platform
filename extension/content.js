@@ -4,6 +4,300 @@ const API_URL = 'http://165.22.2.0/api';
 let cachedSelectors = null;
 let cachedHostname = null;
 
+// ============================================
+// BLOCKED PAGES PROTECTION
+// ============================================
+
+// URL patterns that should be blocked (settings, billing, account, etc.)
+const BLOCKED_URL_PATTERNS = [
+  // Settings pages
+  /\/settings/i,
+  /\/account[-_]?settings/i,
+  /\/preferences/i,
+  /\/options/i,
+  
+  // Billing and payment pages
+  /\/billing/i,
+  /\/payment/i,
+  /\/subscription/i,
+  /\/invoices?/i,
+  /\/pricing/i,
+  /\/upgrade/i,
+  /\/plans?/i,
+  /\/checkout/i,
+  
+  // Account and profile pages
+  /\/account(?!\/login)/i,
+  /\/profile/i,
+  /\/my[-_]?account/i,
+  /\/user[-_]?settings/i,
+  
+  // Security pages
+  /\/security/i,
+  /\/password/i,
+  /\/change[-_]?password/i,
+  /\/two[-_]?factor/i,
+  /\/2fa/i,
+  /\/mfa/i,
+  
+  // Personal info pages
+  /\/personal[-_]?info/i,
+  /\/edit[-_]?profile/i,
+  /\/notifications[-_]?settings/i,
+  
+  // API and developer pages (may contain keys)
+  /\/api[-_]?keys/i,
+  /\/developer/i,
+  /\/tokens/i,
+  /\/integrations/i,
+];
+
+// Keywords in link text that indicate blocked pages
+const BLOCKED_LINK_KEYWORDS = [
+  'settings', 'billing', 'payment', 'subscription', 'account',
+  'profile', 'security', 'password', 'preferences', 'invoices',
+  'upgrade', 'plan', 'personal', 'notifications', 'api key',
+  'developer', 'integrations', 'my account', 'edit profile'
+];
+
+// Check if a URL matches any blocked pattern
+function isBlockedUrl(url) {
+  try {
+    const urlObj = new URL(url, window.location.origin);
+    const pathname = urlObj.pathname.toLowerCase();
+    const hash = urlObj.hash.toLowerCase();
+    const fullPath = pathname + hash;
+    
+    for (const pattern of BLOCKED_URL_PATTERNS) {
+      if (pattern.test(fullPath)) {
+        return true;
+      }
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Check if link text suggests a blocked page
+function isBlockedLinkText(text) {
+  const lowerText = text.toLowerCase().trim();
+  return BLOCKED_LINK_KEYWORDS.some(keyword => lowerText.includes(keyword));
+}
+
+// Create and show the blocked page overlay
+function showBlockedPageOverlay() {
+  // Remove existing overlay if any
+  const existingOverlay = document.getElementById('groupbuy-blocked-overlay');
+  if (existingOverlay) {
+    existingOverlay.remove();
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'groupbuy-blocked-overlay';
+  overlay.innerHTML = `
+    <div style="
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      z-index: 2147483647;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    ">
+      <div style="
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        padding: 60px;
+        max-width: 500px;
+        text-align: center;
+        backdrop-filter: blur(10px);
+      ">
+        <div style="
+          width: 80px;
+          height: 80px;
+          background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin: 0 auto 30px;
+          box-shadow: 0 10px 40px rgba(239, 68, 68, 0.3);
+        ">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
+          </svg>
+        </div>
+        
+        <h1 style="
+          color: #ffffff;
+          font-size: 28px;
+          font-weight: 700;
+          margin: 0 0 15px;
+          letter-spacing: -0.5px;
+        ">Access Restricted</h1>
+        
+        <p style="
+          color: rgba(255, 255, 255, 0.7);
+          font-size: 16px;
+          line-height: 1.6;
+          margin: 0 0 30px;
+        ">
+          Settings, billing, and account pages are not accessible with shared accounts. 
+          This restriction protects the account owner's personal information.
+        </p>
+        
+        <button id="groupbuy-go-back-btn" style="
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          color: white;
+          border: none;
+          padding: 14px 40px;
+          font-size: 16px;
+          font-weight: 600;
+          border-radius: 10px;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
+        ">
+          Go Back
+        </button>
+        
+        <p style="
+          color: rgba(255, 255, 255, 0.4);
+          font-size: 12px;
+          margin-top: 25px;
+        ">
+          Protected by GroupBuy Security
+        </p>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // Add click handler for go back button
+  const goBackBtn = document.getElementById('groupbuy-go-back-btn');
+  if (goBackBtn) {
+    goBackBtn.addEventListener('click', () => {
+      // Try to go back in history, or redirect to main page
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        window.location.href = window.location.origin;
+      }
+    });
+
+    // Add hover effect
+    goBackBtn.addEventListener('mouseenter', () => {
+      goBackBtn.style.transform = 'translateY(-2px)';
+      goBackBtn.style.boxShadow = '0 6px 25px rgba(59, 130, 246, 0.4)';
+    });
+    goBackBtn.addEventListener('mouseleave', () => {
+      goBackBtn.style.transform = 'translateY(0)';
+      goBackBtn.style.boxShadow = '0 4px 20px rgba(59, 130, 246, 0.3)';
+    });
+  }
+
+  console.log('[GroupBuy] Blocked page overlay shown - access to settings/billing/account pages is restricted');
+}
+
+// Check current page and block if necessary
+function checkAndBlockCurrentPage() {
+  if (isBlockedUrl(window.location.href)) {
+    showBlockedPageOverlay();
+    return true;
+  }
+  return false;
+}
+
+// Intercept clicks on links that lead to blocked pages
+function interceptBlockedLinks() {
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest('a');
+    if (!link) return;
+
+    const href = link.getAttribute('href');
+    if (!href) return;
+
+    // Check if the URL is blocked
+    if (isBlockedUrl(href)) {
+      event.preventDefault();
+      event.stopPropagation();
+      showBlockedPageOverlay();
+      console.log('[GroupBuy] Blocked navigation to restricted page:', href);
+      return;
+    }
+
+    // Check if the link text suggests a blocked page
+    const linkText = link.textContent || link.innerText || '';
+    if (isBlockedLinkText(linkText) && href !== '#') {
+      // Double-check by examining the href more carefully
+      const lowerHref = href.toLowerCase();
+      if (BLOCKED_LINK_KEYWORDS.some(keyword => lowerHref.includes(keyword.replace(' ', '')))) {
+        event.preventDefault();
+        event.stopPropagation();
+        showBlockedPageOverlay();
+        console.log('[GroupBuy] Blocked navigation based on link text:', linkText);
+        return;
+      }
+    }
+  }, true); // Use capture phase to intercept before other handlers
+}
+
+// Monitor URL changes (for single-page applications)
+function monitorUrlChanges() {
+  // Monitor pushState
+  const originalPushState = history.pushState;
+  history.pushState = function(...args) {
+    originalPushState.apply(this, args);
+    setTimeout(() => checkAndBlockCurrentPage(), 100);
+  };
+
+  // Monitor replaceState
+  const originalReplaceState = history.replaceState;
+  history.replaceState = function(...args) {
+    originalReplaceState.apply(this, args);
+    setTimeout(() => checkAndBlockCurrentPage(), 100);
+  };
+
+  // Monitor popstate (back/forward navigation)
+  window.addEventListener('popstate', () => {
+    setTimeout(() => checkAndBlockCurrentPage(), 100);
+  });
+
+  // Monitor hashchange
+  window.addEventListener('hashchange', () => {
+    setTimeout(() => checkAndBlockCurrentPage(), 100);
+  });
+}
+
+// Initialize blocked pages protection
+function initBlockedPagesProtection() {
+  // Check current page immediately
+  if (checkAndBlockCurrentPage()) {
+    return; // Page is blocked, no need to continue
+  }
+
+  // Set up click interception
+  interceptBlockedLinks();
+
+  // Monitor URL changes for SPAs
+  monitorUrlChanges();
+
+  console.log('[GroupBuy] Blocked pages protection initialized');
+}
+
+// ============================================
+// END BLOCKED PAGES PROTECTION
+// ============================================
+
 // Fetch selectors from backend for dynamic configuration
 async function fetchSelectorsFromBackend(hostname) {
   try {
@@ -398,6 +692,10 @@ async function fetchCredentialsAndLogin(hostname, selectors) {
   if (!hostname) return;
 
   console.log('[GroupBuy] Extension loaded on', hostname);
+
+  // Initialize blocked pages protection FIRST (before any other logic)
+  // This ensures settings/billing/account pages are blocked immediately
+  initBlockedPagesProtection();
 
   // Check if we already injected cookies for this domain in this session
   const injectionKey = `groupbuy_injected_${hostname}`;
