@@ -86,7 +86,8 @@ function isBlockedLinkText(text) {
 }
 
 // Create and show the blocked page overlay
-function showBlockedPageOverlay() {
+// wasNavigation: true if user actually navigated to the page, false if click was intercepted
+function showBlockedPageOverlay(wasNavigation = false) {
   // Remove existing overlay if any
   const existingOverlay = document.getElementById('groupbuy-blocked-overlay');
   if (existingOverlay) {
@@ -95,6 +96,7 @@ function showBlockedPageOverlay() {
 
   const overlay = document.createElement('div');
   overlay.id = 'groupbuy-blocked-overlay';
+  overlay.dataset.wasNavigation = wasNavigation ? 'true' : 'false';
   overlay.innerHTML = `
     <div style="
       position: fixed;
@@ -186,11 +188,18 @@ function showBlockedPageOverlay() {
   const goBackBtn = document.getElementById('groupbuy-go-back-btn');
   if (goBackBtn) {
     goBackBtn.addEventListener('click', () => {
-      // Try to go back in history, or redirect to main page
-      if (window.history.length > 1) {
-        window.history.back();
+      const wasNavigation = overlay.dataset.wasNavigation === 'true';
+      
+      if (wasNavigation) {
+        // User actually navigated to the blocked page - go back in history
+        if (window.history.length > 1) {
+          window.history.back();
+        } else {
+          window.location.href = window.location.origin;
+        }
       } else {
-        window.location.href = window.location.origin;
+        // Click was intercepted - just remove the overlay
+        overlay.remove();
       }
     });
 
@@ -211,7 +220,8 @@ function showBlockedPageOverlay() {
 // Check current page and block if necessary
 function checkAndBlockCurrentPage() {
   if (isBlockedUrl(window.location.href)) {
-    showBlockedPageOverlay();
+    // User actually navigated to this page, so wasNavigation = true
+    showBlockedPageOverlay(true);
     return true;
   }
   return false;

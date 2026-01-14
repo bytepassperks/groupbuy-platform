@@ -81,7 +81,8 @@ chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           accessCode: stored.accessCode,
-          sessionToken: stored.sessionToken 
+          sessionToken: stored.sessionToken,
+          domain: tabInfo.baseDomain
         }),
       }).catch(err => console.log('[GroupBuy] Failed to notify backend of logout:', err));
     }

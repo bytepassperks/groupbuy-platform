@@ -681,9 +681,13 @@ router.post('/log-access', async (req, res) => {
 });
 
 router.post('/logout', async (req, res) => {
-  const { sessionToken, accessCode } = req.body;
+  const { sessionToken, accessCode, domain } = req.body;
 
   try {
+    let userId: number | null = null;
+    let productId: number | null = null;
+
+    // Try to find user/product from session token first
     if (sessionToken) {
       const tokenHash = hashToken(sessionToken);
       
@@ -694,42 +698,69 @@ router.post('/logout', async (req, res) => {
 
       if (sessionResult.rows.length > 0) {
         const session = sessionResult.rows[0];
-
-        await db.query(
-          `UPDATE access_logs 
-           SET logout_time = NOW(), 
-               duration_seconds = EXTRACT(EPOCH FROM (NOW() - login_time))
-           WHERE user_id = $1 AND product_id = $2 AND logout_time IS NULL
-           ORDER BY login_time DESC LIMIT 1`,
-          [session.user_id, session.product_id]
-        );
-
-        // Decrement user count for multi-account assignment
-        const assignmentResult = await db.query(
-          `SELECT account_id FROM user_account_assignments
-           WHERE user_id = $1 AND product_id = $2 AND is_active = true`,
-          [session.user_id, session.product_id]
-        );
-
-        if (assignmentResult.rows.length > 0) {
-          const accountId = assignmentResult.rows[0].account_id;
-          
-          // Decrement current_users count (but don't go below 0)
-          await db.query(
-            'UPDATE product_accounts SET current_users = GREATEST(0, current_users - 1) WHERE id = $1',
-            [accountId]
-          );
-
-          // Deactivate the assignment
-          await db.query(
-            'UPDATE user_account_assignments SET is_active = false WHERE user_id = $1 AND product_id = $2',
-            [session.user_id, session.product_id]
-          );
-
-          console.log(`[Multi-Account] User logged out, decremented count for account ${accountId}`);
-        }
-
+        userId = session.user_id;
+        productId = session.product_id;
+        
+        // Delete the session token
         await db.query('DELETE FROM session_tokens WHERE token_hash = $1', [tokenHash]);
+      }
+    }
+
+    // If no session token or it wasn't found, try to find by accessCode and domain
+    if (!userId && accessCode && domain) {
+      const accessCodeHash = hashAccessCode(accessCode);
+      
+      const purchaseResult = await db.query(
+        `SELECT p.user_id, prod.id as product_id
+         FROM purchases p
+         JOIN products prod ON p.product_id = prod.id
+         WHERE p.access_code_hash = $1 AND p.status = 'active'
+         AND (prod.login_domain = $2 OR prod.login_domain LIKE $3)
+         LIMIT 1`,
+        [accessCodeHash, domain, `%${domain}%`]
+      );
+
+      if (purchaseResult.rows.length > 0) {
+        userId = purchaseResult.rows[0].user_id;
+        productId = purchaseResult.rows[0].product_id;
+      }
+    }
+
+    // If we found the user and product, update access logs and assignments
+    if (userId && productId) {
+      console.log(`[Logout] Processing logout for user ${userId}, product ${productId}`);
+
+      await db.query(
+        `UPDATE access_logs 
+         SET logout_time = NOW(), 
+             duration_seconds = EXTRACT(EPOCH FROM (NOW() - login_time))
+         WHERE user_id = $1 AND product_id = $2 AND logout_time IS NULL`,
+        [userId, productId]
+      );
+
+      // Decrement user count for multi-account assignment
+      const assignmentResult = await db.query(
+        `SELECT account_id FROM user_account_assignments
+         WHERE user_id = $1 AND product_id = $2 AND is_active = true`,
+        [userId, productId]
+      );
+
+      if (assignmentResult.rows.length > 0) {
+        const accountId = assignmentResult.rows[0].account_id;
+        
+        // Decrement current_users count (but don't go below 0)
+        await db.query(
+          'UPDATE product_accounts SET current_users = GREATEST(0, current_users - 1) WHERE id = $1',
+          [accountId]
+        );
+
+        // Deactivate the assignment
+        await db.query(
+          'UPDATE user_account_assignments SET is_active = false WHERE user_id = $1 AND product_id = $2',
+          [userId, productId]
+        );
+
+        console.log(`[Multi-Account] User logged out, decremented count for account ${accountId}`);
       }
     }
 
