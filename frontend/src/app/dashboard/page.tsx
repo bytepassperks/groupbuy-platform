@@ -46,9 +46,10 @@ export default function DashboardPage() {
   }, [isHydrated, authLoading, isAuthenticated, router]);
 
   const { data: purchasesData, isLoading, refetch } = useQuery({
-    queryKey: ['my-purchases'],
+    queryKey: ['my-purchases', user?.id],
     queryFn: () => purchasesApi.getMyPurchases(),
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && !!user?.id,
+    staleTime: 0,
   });
 
   const purchases: Purchase[] = purchasesData?.data?.purchases || [];
