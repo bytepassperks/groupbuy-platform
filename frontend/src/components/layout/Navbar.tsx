@@ -31,7 +31,7 @@ export default function Navbar() {
         <div className="flex justify-between h-16">
           <div className="flex items-center">
             <Link href="/" className="flex-shrink-0 flex items-center gap-2">
-              <Image src="/logo.png" alt="EliteAccess" width={32} height={32} className="rounded-lg" />
+              <Image src="/logo.png" alt="EliteAccess" width={40} height={40} className="rounded-lg" />
               <span className="text-xl font-bold text-blue-900">EliteAccess</span>
             </Link>
             <div className="hidden md:ml-10 md:flex md:space-x-8">
