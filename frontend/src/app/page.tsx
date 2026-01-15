@@ -2,15 +2,17 @@
 
 import Link from 'next/link';
 import Button from '@/components/ui/Button';
-import { Shield, Zap, Users, Lock } from 'lucide-react';
+import { Shield, Zap, Users, Lock, Monitor, Apple, Smartphone, Download, Chrome } from 'lucide-react';
 
 export default function Home() {
   const features = [
     { icon: Shield, title: 'Secure Access', description: 'Your credentials are encrypted with AES-256 and never exposed to users.' },
-    { icon: Zap, title: 'Instant Access', description: 'Get immediate access to premium tools through our browser extension.' },
+    { icon: Zap, title: 'Instant Access', description: 'Get immediate access to premium tools through our secure desktop and mobile apps.' },
     { icon: Users, title: 'Group Buying', description: 'Share costs with others and access premium tools at a fraction of the price.' },
-    { icon: Lock, title: 'Privacy First', description: 'Credentials auto-fill without ever being visible to you.' },
+    { icon: Lock, title: 'Privacy First', description: 'Credentials are completely hidden - no way to view or steal them.' },
   ];
+
+  const downloadBaseUrl = 'https://github.com/bytepassperks/groupbuy-platform/releases/download/v1.0.0';
 
   return (
     <div>
@@ -64,7 +66,7 @@ export default function Home() {
             {[
               { num: '1', title: 'Choose a Product', desc: 'Browse our catalog of premium tools and select the one you need.' },
               { num: '2', title: 'Complete Purchase', desc: 'Pay securely and receive your unique access code instantly.' },
-              { num: '3', title: 'Access via Extension', desc: 'Install our browser extension and enjoy automatic login to your tools.' },
+              { num: '3', title: 'Download & Access', desc: 'Download our secure app for your platform and enter your access code to start using your tools.' },
             ].map((step) => (
               <div key={step.num} className="text-center">
                 <div className="w-16 h-16 bg-blue-600 text-white rounded-full flex items-center justify-center mx-auto mb-4 text-2xl font-bold">{step.num}</div>
@@ -72,6 +74,76 @@ export default function Home() {
                 <p className="text-gray-600">{step.desc}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="py-20 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold text-gray-900 mb-4">Download Our Apps</h2>
+            <p className="text-lg text-gray-600 max-w-2xl mx-auto">Access your subscriptions securely on any device with our dedicated applications.</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <a 
+              href={`${downloadBaseUrl}/GroupBuy-Chrome-Setup-v1.0.1.exe`}
+              className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow text-center group"
+            >
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-blue-200 transition-colors">
+                <Chrome className="w-8 h-8 text-blue-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Chrome Launcher</h3>
+              <p className="text-sm text-gray-600 mb-4">Windows - Recommended</p>
+              <span className="inline-flex items-center text-blue-600 font-medium">
+                <Download className="w-4 h-4 mr-2" />
+                Download
+              </span>
+            </a>
+            <a 
+              href={`${downloadBaseUrl}/GroupBuy-Setup-1.0.0.exe`}
+              className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow text-center group"
+            >
+              <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-purple-200 transition-colors">
+                <Monitor className="w-8 h-8 text-purple-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Desktop App</h3>
+              <p className="text-sm text-gray-600 mb-4">Windows</p>
+              <span className="inline-flex items-center text-blue-600 font-medium">
+                <Download className="w-4 h-4 mr-2" />
+                Download
+              </span>
+            </a>
+            <a 
+              href={`${downloadBaseUrl}/GroupBuy-1.0.0-mac.zip`}
+              className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow text-center group"
+            >
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-gray-200 transition-colors">
+                <Apple className="w-8 h-8 text-gray-800" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Desktop App</h3>
+              <p className="text-sm text-gray-600 mb-4">macOS</p>
+              <span className="inline-flex items-center text-blue-600 font-medium">
+                <Download className="w-4 h-4 mr-2" />
+                Download
+              </span>
+            </a>
+            <a 
+              href={`${downloadBaseUrl}/GroupBuy.apk`}
+              className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow text-center group"
+            >
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-green-200 transition-colors">
+                <Smartphone className="w-8 h-8 text-green-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Mobile App</h3>
+              <p className="text-sm text-gray-600 mb-4">Android</p>
+              <span className="inline-flex items-center text-blue-600 font-medium">
+                <Download className="w-4 h-4 mr-2" />
+                Download
+              </span>
+            </a>
+          </div>
+          <div className="mt-8 text-center">
+            <p className="text-sm text-gray-500">All apps feature maximum security: credentials are completely hidden, DevTools disabled, and auto-logout on close.</p>
           </div>
         </div>
       </section>

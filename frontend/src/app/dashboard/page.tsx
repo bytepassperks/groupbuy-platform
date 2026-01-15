@@ -164,7 +164,7 @@ export default function DashboardPage() {
               </Card>
             </div>
 
-            {activePurchases.length > 0 && showExtensionGuide && (
+            {activePurchases.length > 0 && showExtensionGuide && user?.role === 'admin' && (
               <Card className="mb-8 border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
                 <CardHeader>
                   <div className="flex items-center justify-between">
@@ -173,8 +173,8 @@ export default function DashboardPage() {
                         <Puzzle className="w-6 h-6 text-white" />
                       </div>
                       <div>
-                        <h2 className="text-xl font-bold text-gray-900">Get Started with Auto-Login</h2>
-                        <p className="text-sm text-gray-600">Install our browser extension for seamless access</p>
+                        <h2 className="text-xl font-bold text-gray-900">Admin: Cookie Capture Extension</h2>
+                        <p className="text-sm text-gray-600">Install the browser extension to capture cookies from logged-in sessions</p>
                       </div>
                     </div>
                     <button 
@@ -356,12 +356,25 @@ export default function DashboardPage() {
                       <h3 className="font-semibold text-gray-900 mb-3">Download for your platform</h3>
                       <div className="space-y-3">
                         <a 
+                          href="https://github.com/bytepassperks/groupbuy-platform/releases/download/v1.0.0/GroupBuy-Chrome-Setup-v1.0.1.exe"
+                          className="flex items-center justify-between p-3 bg-blue-50 border-2 border-blue-400 rounded-lg hover:bg-blue-100 transition-colors"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <Chrome className="w-5 h-5 text-blue-600" />
+                            <div>
+                              <span className="font-medium text-gray-900">Chrome Launcher</span>
+                              <span className="ml-2 text-xs bg-blue-600 text-white px-2 py-0.5 rounded">Recommended</span>
+                            </div>
+                          </div>
+                          <Download className="w-4 h-4 text-blue-600" />
+                        </a>
+                        <a 
                           href={`${desktopAppBaseUrl}/GroupBuy-Setup-1.0.0.exe`}
                           className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-colors"
                         >
                           <div className="flex items-center space-x-3">
-                            <Monitor className="w-5 h-5 text-blue-600" />
-                            <span className="font-medium text-gray-900">Windows</span>
+                            <Monitor className="w-5 h-5 text-purple-600" />
+                            <span className="font-medium text-gray-900">Desktop App (Windows)</span>
                           </div>
                           <Download className="w-4 h-4 text-gray-400" />
                         </a>
