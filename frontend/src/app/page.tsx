@@ -34,7 +34,7 @@ export default function Home() {
                 <Button size="lg" className="bg-amber-500 text-gray-900 hover:bg-amber-400 font-semibold">Browse Products</Button>
               </Link>
               <Link href="/register">
-                <Button size="lg" variant="outline" className="border-white text-white hover:bg-blue-700">Get Started Free</Button>
+                <Button size="lg" className="bg-transparent border-2 border-white text-white hover:bg-white hover:text-blue-900">Get Started Free</Button>
               </Link>
             </div>
           </div>
