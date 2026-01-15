@@ -51,6 +51,8 @@
   "dependencies": {
     "axios": "^1.13.2",
     "puppeteer-core": "^24.35.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "ws": "^8.19.0"
   },
   "devDependencies": {

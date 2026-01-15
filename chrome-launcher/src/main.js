@@ -3,7 +3,14 @@ const path = require('path');
 const axios = require('axios');
 const fs = require('fs');
 const os = require('os');
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+
+// Add stealth plugin to avoid detection
+puppeteer.use(StealthPlugin());
+
+// Realistic user agent to avoid detection
+const REALISTIC_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 app.disableHardwareAcceleration();
 
@@ -192,10 +199,10 @@ async function launchChrome(productUrl, cookies, productName) {
   console.log(`[GroupBuy] Cookies to inject: ${cookies.length}`);
 
   try {
-    // Launch Chrome with puppeteer-core
-    // Key flags to avoid automation detection:
-    // - disable-blink-features=AutomationControlled removes navigator.webdriver
-    // - ignoreDefaultArgs removes --enable-automation flag
+    // Launch Chrome with puppeteer-extra + stealth plugin
+    // Stealth plugin patches 10+ detection vectors including:
+    // - navigator.webdriver, chrome.runtime, plugins, languages, WebGL, etc.
+    // Additional flags for extra stealth:
     browser = await puppeteer.launch({
       executablePath: chromePath,
       headless: false,
@@ -211,7 +218,8 @@ async function launchChrome(productUrl, cookies, productName) {
         '--disable-blink-features=AutomationControlled',
         '--disable-infobars',
         '--disable-extensions',
-        '--disable-dev-shm-usage'
+        '--disable-dev-shm-usage',
+        `--user-agent=${REALISTIC_USER_AGENT}`
       ]
     });
 
