@@ -10,6 +10,30 @@ app.disableHardwareAcceleration();
 const API_BASE_URL = 'http://165.22.2.0/api';
 const APP_NAME = 'GroupBuy Chrome';
 
+// Blocked URL patterns for settings/billing pages
+const BLOCKED_URL_PATTERNS = [
+  // Canva
+  /canva\.com\/settings/i,
+  /canva\.com\/account/i,
+  /canva\.com\/billing/i,
+  /canva\.com\/brand-kit/i,
+  /canva\.com\/teams/i,
+  // Blinkist
+  /blinkist\.com\/.*settings/i,
+  /blinkist\.com\/.*account/i,
+  /blinkist\.com\/.*billing/i,
+  /blinkist\.com\/.*subscription/i,
+  /blinkist\.com\/.*payment/i,
+  // Generic patterns
+  /\/settings\/?$/i,
+  /\/account\/?$/i,
+  /\/billing\/?$/i,
+  /\/subscription\/?$/i,
+  /\/payment\/?$/i,
+  /\/profile\/?$/i,
+  /\/preferences\/?$/i,
+];
+
 let loginWindow = null;
 let browser = null;
 let browserWsEndpoint = null;
@@ -17,9 +41,15 @@ let userSession = {
   accessCode: null,
   productId: null,
   productName: null,
-  sessionToken: null
+  sessionToken: null,
+  serviceUrl: null
 };
 let userDataDir = null;
+let urlMonitorInterval = null;
+
+function isBlockedUrl(url) {
+  return BLOCKED_URL_PATTERNS.some(pattern => pattern.test(url));
+}
 
 function findChrome() {
   const platform = os.platform();
@@ -166,17 +196,41 @@ async function launchChrome(productUrl, cookies, productName) {
     await page.goto(productUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
     console.log('[GroupBuy] Navigation complete');
 
+    // Store the service URL for redirecting back
+    userSession.serviceUrl = productUrl;
+
     // Disconnect puppeteer but keep browser open
     browser.disconnect();
     console.log('[GroupBuy] Puppeteer disconnected, browser running independently');
 
-    // Monitor for browser close
+    // Monitor for browser close and blocked URLs
     const checkInterval = setInterval(async () => {
+      let testBrowser = null;
       try {
-        const testBrowser = await puppeteer.connect({ browserWSEndpoint: browserWsEndpoint });
+        testBrowser = await puppeteer.connect({ browserWSEndpoint: browserWsEndpoint });
+        
+        // Check all pages for blocked URLs
+        const pages = await testBrowser.pages();
+        for (const p of pages) {
+          try {
+            const currentUrl = p.url();
+            if (isBlockedUrl(currentUrl)) {
+              console.log(`[GroupBuy] Blocked URL detected: ${currentUrl}`);
+              console.log(`[GroupBuy] Redirecting to: ${userSession.serviceUrl}`);
+              await p.goto(userSession.serviceUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
+            }
+          } catch (pageErr) {
+            // Page might have been closed, ignore
+          }
+        }
+        
         testBrowser.disconnect();
       } catch (err) {
         console.log('[GroupBuy] Browser closed detected, cleaning up...');
+        if (urlMonitorInterval) {
+          clearInterval(urlMonitorInterval);
+          urlMonitorInterval = null;
+        }
         clearInterval(checkInterval);
         browser = null;
         browserWsEndpoint = null;
@@ -194,7 +248,7 @@ async function launchChrome(productUrl, cookies, productName) {
             console.error('[GroupBuy] Logout error:', logoutErr.message);
           }
         }
-        userSession = { accessCode: null, productId: null, productName: null, sessionToken: null };
+        userSession = { accessCode: null, productId: null, productName: null, sessionToken: null, serviceUrl: null };
         
         // Clean up temp profile
         try {
@@ -256,7 +310,8 @@ ipcMain.handle('launch-product', async (event, { accessCode, productId, productN
         accessCode, 
         productId, 
         productName,
-        sessionToken: response.data.sessionToken || null
+        sessionToken: response.data.sessionToken || null,
+        serviceUrl: response.data.serviceUrl || response.data.loginUrl
       };
       
       const success = await launchChrome(
