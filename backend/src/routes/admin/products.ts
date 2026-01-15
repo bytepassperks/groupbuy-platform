@@ -7,7 +7,7 @@ import { AuthenticatedRequest, Product } from '../../types';
 const router = express.Router();
 
 router.post('/add', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res: Response) => {
-  const { name, category, price, maxUsers, serviceUrl, loginUrl, description, iconUrl, sessionCookies, sessionExpiresAt, renewalPeriod } = req.body;
+  const { name, category, price, maxUsers, serviceUrl, loginUrl, description, iconUrl, sessionCookies, sessionExpiresAt, renewalPeriod, blockedUrls } = req.body;
 
   try {
     if (!name || !category || !price) {
@@ -48,10 +48,10 @@ router.post('/add', authMiddleware, adminOnly, async (req: AuthenticatedRequest,
     const result = await db.query<Product>(
       `INSERT INTO products
        (name, slug, category, price, renewal_period, max_concurrent_users, service_url, login_url, login_domain,
-        encrypted_session_cookies, session_expires_at, session_last_updated, description, icon_url, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        encrypted_session_cookies, session_expires_at, session_last_updated, description, icon_url, status, blocked_urls)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        RETURNING id, name, slug, category, price, renewal_period, max_concurrent_users, service_url, login_url, login_domain,
-                 session_expires_at, session_last_updated, status, created_at`,
+                 session_expires_at, session_last_updated, status, created_at, blocked_urls`,
       [
         name,
         slug,
@@ -67,7 +67,8 @@ router.post('/add', authMiddleware, adminOnly, async (req: AuthenticatedRequest,
         sessionCookies ? new Date() : null,
         description || null,
         iconUrl || null,
-        'active'
+        'active',
+        blockedUrls && blockedUrls.length > 0 ? blockedUrls : null
       ]
     );
 
@@ -128,7 +129,7 @@ router.get('/', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res
     let query = `
       SELECT id, name, slug, category, icon_url, description, price, renewal_period,
              max_concurrent_users, current_concurrent_users, service_url, login_url, login_domain,
-             session_expires_at, session_last_updated, status, created_at, updated_at
+             session_expires_at, session_last_updated, status, created_at, updated_at, blocked_urls
       FROM products
       WHERE 1=1
     `;
@@ -190,7 +191,7 @@ router.get('/:id', authMiddleware, adminOnly, async (req: AuthenticatedRequest, 
     const result = await db.query<Product>(
       `SELECT id, name, slug, category, icon_url, description, price, renewal_period,
               max_concurrent_users, current_concurrent_users, service_url, login_url, login_domain,
-              session_expires_at, session_last_updated, status, created_at, updated_at
+              session_expires_at, session_last_updated, status, created_at, updated_at, blocked_urls
        FROM products WHERE id = $1`,
       [id]
     );
@@ -224,7 +225,7 @@ router.get('/:id', authMiddleware, adminOnly, async (req: AuthenticatedRequest, 
 
 router.put('/:id', authMiddleware, adminOnly, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
-  const { name, category, price, maxUsers, serviceUrl, loginUrl, description, iconUrl, status, sessionCookies, sessionExpiresAt, renewalPeriod } = req.body;
+  const { name, category, price, maxUsers, serviceUrl, loginUrl, description, iconUrl, status, sessionCookies, sessionExpiresAt, renewalPeriod, blockedUrls } = req.body;
 
   try {
     const existingResult = await db.query<Product>(
@@ -345,6 +346,13 @@ router.put('/:id', authMiddleware, adminOnly, async (req: AuthenticatedRequest, 
       paramIndex++;
     }
 
+    // Handle blocked URLs update
+    if (blockedUrls !== undefined) {
+      updates.push(`blocked_urls = $${paramIndex}`);
+      params.push(blockedUrls && blockedUrls.length > 0 ? blockedUrls : null);
+      paramIndex++;
+    }
+
     if (updates.length === 0) {
       res.status(400).json({ error: 'No fields to update' });
       return;
@@ -356,7 +364,7 @@ router.put('/:id', authMiddleware, adminOnly, async (req: AuthenticatedRequest, 
     const query = `
       UPDATE products SET ${updates.join(', ')}
       WHERE id = $${paramIndex}
-      RETURNING id, name, slug, category, price, renewal_period, max_concurrent_users, service_url, login_url, session_expires_at, status
+      RETURNING id, name, slug, category, price, renewal_period, max_concurrent_users, service_url, login_url, session_expires_at, status, blocked_urls
     `;
 
     const result = await db.query<Product>(query, params);

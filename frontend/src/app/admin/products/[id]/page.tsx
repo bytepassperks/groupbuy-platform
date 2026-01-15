@@ -55,6 +55,7 @@ export default function AdminProductDetailPage() {
     sessionCookies: '',
     sessionExpiresAt: '',
     renewalPeriod: 'annual',
+    blockedUrls: '',
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -166,6 +167,7 @@ export default function AdminProductDetailPage() {
         sessionCookies: '',
         sessionExpiresAt: p.session_expires_at ? new Date(p.session_expires_at).toISOString().slice(0, 16) : '',
         renewalPeriod: p.renewal_period || 'annual',
+        blockedUrls: p.blocked_urls ? p.blocked_urls.join('\n') : '',
       });
     }
   }, [productData]);
@@ -224,6 +226,7 @@ export default function AdminProductDetailPage() {
       iconUrl: formData.iconUrl,
       status: formData.status,
       renewalPeriod: formData.renewalPeriod,
+      blockedUrls: formData.blockedUrls ? formData.blockedUrls.split('\n').map(u => u.trim()).filter(u => u) : [],
     };
 
     if (formData.sessionCookies) {
@@ -378,6 +381,39 @@ export default function AdminProductDetailPage() {
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 rows={3}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Blocked URLs</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800 font-medium mb-2">URL Blocking for Buyers</p>
+              <p className="text-sm text-blue-700">
+                Add URL patterns (one per line) to block buyers from accessing sensitive pages like settings, billing, or account pages. 
+                The Chrome Launcher will automatically redirect users back to the main product page if they try to access these URLs.
+              </p>
+              <p className="text-sm text-blue-700 mt-2">
+                <strong>Examples:</strong> /settings, /account, /billing, canva.com/brand-kit
+              </p>
+              <p className="text-sm text-blue-700 mt-1">
+                <strong>Note:</strong> Common patterns like /settings, /account, /billing are already blocked by default. 
+                Add product-specific patterns here for additional protection.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Blocked URL Patterns (one per line)</label>
+              <textarea
+                value={formData.blockedUrls}
+                onChange={(e) => setFormData({ ...formData, blockedUrls: e.target.value })}
+                rows={4}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                placeholder="/brand-kit&#10;/teams&#10;/organization&#10;example.com/custom-settings"
               />
             </div>
           </CardContent>

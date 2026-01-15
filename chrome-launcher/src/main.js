@@ -10,28 +10,65 @@ app.disableHardwareAcceleration();
 const API_BASE_URL = 'http://165.22.2.0/api';
 const APP_NAME = 'GroupBuy Chrome';
 
-// Blocked URL patterns for settings/billing pages
-const BLOCKED_URL_PATTERNS = [
-  // Canva
-  /canva\.com\/settings/i,
-  /canva\.com\/account/i,
-  /canva\.com\/billing/i,
-  /canva\.com\/brand-kit/i,
-  /canva\.com\/teams/i,
-  // Blinkist
-  /blinkist\.com\/.*settings/i,
-  /blinkist\.com\/.*account/i,
-  /blinkist\.com\/.*billing/i,
-  /blinkist\.com\/.*subscription/i,
-  /blinkist\.com\/.*payment/i,
-  // Generic patterns
-  /\/settings\/?$/i,
-  /\/account\/?$/i,
-  /\/billing\/?$/i,
-  /\/subscription\/?$/i,
-  /\/payment\/?$/i,
-  /\/profile\/?$/i,
-  /\/preferences\/?$/i,
+// Default blocked URL patterns for settings/billing pages (comprehensive)
+const DEFAULT_BLOCKED_PATTERNS = [
+  // Path-based patterns (works for any domain)
+  /\/settings/i,
+  /\/account/i,
+  /\/billing/i,
+  /\/subscription/i,
+  /\/payment/i,
+  /\/profile/i,
+  /\/preferences/i,
+  /\/my-account/i,
+  /\/my-profile/i,
+  /\/my-settings/i,
+  /\/user\/settings/i,
+  /\/user\/account/i,
+  /\/user\/profile/i,
+  /\/user\/billing/i,
+  /\/users\/settings/i,
+  /\/users\/account/i,
+  /\/manage-account/i,
+  /\/manage-subscription/i,
+  /\/account-settings/i,
+  /\/billing-settings/i,
+  /\/payment-methods/i,
+  /\/payment-history/i,
+  /\/invoices/i,
+  /\/receipts/i,
+  /\/plans/i,
+  /\/upgrade/i,
+  /\/downgrade/i,
+  /\/cancel/i,
+  /\/membership/i,
+  /\/team/i,
+  /\/teams/i,
+  /\/organization/i,
+  /\/admin/i,
+  /\/dashboard\/settings/i,
+  /\/dashboard\/account/i,
+  /\/dashboard\/billing/i,
+  // Subdomain-based patterns
+  /^https?:\/\/account\./i,
+  /^https?:\/\/billing\./i,
+  /^https?:\/\/settings\./i,
+  /^https?:\/\/my\./i,
+  /^https?:\/\/profile\./i,
+  /^https?:\/\/payments\./i,
+  /^https?:\/\/subscription\./i,
+  /^https?:\/\/manage\./i,
+  // Query parameter patterns
+  /[?&]tab=account/i,
+  /[?&]tab=billing/i,
+  /[?&]tab=settings/i,
+  /[?&]tab=profile/i,
+  /[?&]view=account/i,
+  /[?&]view=billing/i,
+  /[?&]view=settings/i,
+  /[?&]section=account/i,
+  /[?&]section=billing/i,
+  /[?&]section=settings/i,
 ];
 
 let loginWindow = null;
@@ -42,13 +79,37 @@ let userSession = {
   productId: null,
   productName: null,
   sessionToken: null,
-  serviceUrl: null
+  serviceUrl: null,
+  blockedUrls: []
 };
 let userDataDir = null;
 let urlMonitorInterval = null;
 
 function isBlockedUrl(url) {
-  return BLOCKED_URL_PATTERNS.some(pattern => pattern.test(url));
+  // Check default patterns
+  if (DEFAULT_BLOCKED_PATTERNS.some(pattern => pattern.test(url))) {
+    return true;
+  }
+  
+  // Check product-specific blocked URLs from server
+  if (userSession.blockedUrls && userSession.blockedUrls.length > 0) {
+    for (const pattern of userSession.blockedUrls) {
+      try {
+        // Support both string patterns and regex strings
+        const regex = new RegExp(pattern, 'i');
+        if (regex.test(url)) {
+          return true;
+        }
+      } catch (e) {
+        // If regex is invalid, try simple string match
+        if (url.toLowerCase().includes(pattern.toLowerCase())) {
+          return true;
+        }
+      }
+    }
+  }
+  
+  return false;
 }
 
 function findChrome() {
@@ -248,7 +309,7 @@ async function launchChrome(productUrl, cookies, productName) {
             console.error('[GroupBuy] Logout error:', logoutErr.message);
           }
         }
-        userSession = { accessCode: null, productId: null, productName: null, sessionToken: null, serviceUrl: null };
+        userSession = { accessCode: null, productId: null, productName: null, sessionToken: null, serviceUrl: null, blockedUrls: [] };
         
         // Clean up temp profile
         try {
@@ -311,7 +372,8 @@ ipcMain.handle('launch-product', async (event, { accessCode, productId, productN
         productId, 
         productName,
         sessionToken: response.data.sessionToken || null,
-        serviceUrl: response.data.serviceUrl || response.data.loginUrl
+        serviceUrl: response.data.serviceUrl || response.data.loginUrl,
+        blockedUrls: response.data.blockedUrls || []
       };
       
       const success = await launchChrome(

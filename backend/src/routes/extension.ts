@@ -182,7 +182,7 @@ router.post('/get-credentials', async (req, res) => {
 
     const purchaseResult = await db.query(
       `SELECT p.*, prod.id as prod_id, prod.name as prod_name, prod.encrypted_session_cookies, 
-              prod.session_expires_at, prod.max_concurrent_users, prod.service_url, prod.login_url, prod.login_domain
+              prod.session_expires_at, prod.max_concurrent_users, prod.service_url, prod.login_url, prod.login_domain, prod.blocked_urls
        FROM purchases p
        JOIN products prod ON p.product_id = prod.id
        WHERE p.access_code_hash = $1 AND p.status = $2`,
@@ -210,7 +210,7 @@ router.post('/get-credentials', async (req, res) => {
                           purchase.prod_name.toLowerCase().includes(product.toLowerCase());
       if (!productMatch) {
         const otherPurchase = await db.query(
-          `SELECT p.*, prod.encrypted_session_cookies, prod.session_expires_at, prod.service_url, prod.login_url, prod.login_domain, prod.name as prod_name
+          `SELECT p.*, prod.encrypted_session_cookies, prod.session_expires_at, prod.service_url, prod.login_url, prod.login_domain, prod.name as prod_name, prod.blocked_urls
            FROM purchases p
            JOIN products prod ON p.product_id = prod.id
            WHERE p.user_id = $1 AND p.status = $2 AND p.expires_at > NOW()
@@ -228,6 +228,7 @@ router.post('/get-credentials', async (req, res) => {
           purchase.prod_name = other.prod_name;
           purchase.prod_id = other.product_id;
           purchase.id = other.id;
+          purchase.blocked_urls = other.blocked_urls;
         }
       }
     }
@@ -320,7 +321,8 @@ router.post('/get-credentials', async (req, res) => {
       loginDomain: purchase.login_domain,
       sessionExpiresAt: purchase.session_expires_at,
       purchaseExpiresAt: purchase.expires_at,
-      sessionToken: sessionToken
+      sessionToken: sessionToken,
+      blockedUrls: purchase.blocked_urls || []
     });
 
     console.log('Session cookies sent to extension');
