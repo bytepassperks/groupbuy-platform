@@ -200,7 +200,19 @@ export default function Home() {
       <StickyUrgencyBar />
 
       {/* Hero Section with Parallax */}
-      <section ref={heroRef} className="relative min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-blue-700 text-white overflow-hidden">
+      <section ref={heroRef} className="relative min-h-screen text-white overflow-hidden">
+        {/* Background Image with Overlay */}
+        <div className="absolute inset-0">
+          <Image
+            src="/images/hero-team.jpg"
+            alt="Team collaboration"
+            fill
+            className="object-cover"
+            priority
+          />
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-900/90 via-blue-800/85 to-blue-700/80" />
+        </div>
+        
         {/* Animated Background Elements */}
         <div className="absolute inset-0 overflow-hidden">
           {[...Array(20)].map((_, i) => (
@@ -391,15 +403,45 @@ export default function Home() {
       {/* Features Section */}
       <section className="py-20 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-16"
-          >
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">Why Choose EliteAccess?</h2>
-            <p className="text-lg text-gray-600 max-w-2xl mx-auto">We provide secure, affordable access to premium tools without compromising on security or quality.</p>
-          </motion.div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center mb-16">
+            <motion.div
+              initial={{ opacity: 0, x: -30 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+            >
+              <h2 className="text-3xl font-bold text-gray-900 mb-4">Why Choose EliteAccess?</h2>
+              <p className="text-lg text-gray-600 mb-6">We provide secure, affordable access to premium tools without compromising on security or quality.</p>
+              <ul className="space-y-3">
+                {['AES-256 encryption for all credentials', 'Instant access to 50+ premium tools', 'Save up to 90% on subscriptions', '24/7 customer support'].map((item, i) => (
+                  <motion.li
+                    key={i}
+                    initial={{ opacity: 0, x: -20 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.1 }}
+                    viewport={{ once: true }}
+                    className="flex items-center gap-2 text-gray-700"
+                  >
+                    <CheckCircle className="w-5 h-5 text-green-500" />
+                    {item}
+                  </motion.li>
+                ))}
+              </ul>
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, x: 30 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              className="relative h-80 rounded-2xl overflow-hidden shadow-2xl"
+            >
+              <Image
+                src="/images/workspace.jpg"
+                alt="Modern workspace"
+                fill
+                className="object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-blue-900/30 to-transparent" />
+            </motion.div>
+          </div>
           <motion.div
             variants={containerVariants}
             initial="hidden"
@@ -429,8 +471,16 @@ export default function Home() {
       </section>
 
       {/* How It Works Section */}
-      <section className="py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section className="py-20 relative overflow-hidden">
+        <div className="absolute inset-0 opacity-5">
+          <Image
+            src="/images/digital-tools.jpg"
+            alt="Digital tools background"
+            fill
+            className="object-cover"
+          />
+        </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -438,6 +488,7 @@ export default function Home() {
             className="text-center mb-16"
           >
             <h2 className="text-3xl font-bold text-gray-900 mb-4">How It Works</h2>
+            <p className="text-lg text-gray-600 max-w-2xl mx-auto">Get started in just 3 simple steps</p>
           </motion.div>
           <motion.div
             variants={containerVariants}
@@ -454,7 +505,7 @@ export default function Home() {
               <motion.div
                 key={step.num}
                 variants={itemVariants}
-                className="text-center"
+                className="text-center bg-white/80 backdrop-blur-sm p-8 rounded-xl shadow-lg"
               >
                 <motion.div
                   whileHover={{ scale: 1.1 }}
