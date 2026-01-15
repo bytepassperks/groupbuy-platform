@@ -207,6 +207,7 @@ async function launchChrome(productUrl, cookies, productName) {
         '--no-first-run',
         '--no-default-browser-check',
         '--start-maximized',
+        '--window-size=1920,1080',
         '--disable-blink-features=AutomationControlled',
         '--disable-infobars',
         '--disable-extensions',
@@ -223,20 +224,9 @@ async function launchChrome(productUrl, cookies, productName) {
     const pages = await browser.pages();
     const page = pages[0] || await browser.newPage();
 
-    // Fix viewport to use full window size
-    // defaultViewport: null doesn't always work, so we explicitly set it
-    try {
-      const { width, height } = await page.evaluate(() => ({
-        width: window.screen.availWidth || window.innerWidth || 1920,
-        height: window.screen.availHeight || window.innerHeight || 1080
-      }));
-      await page.setViewport({ width, height });
-      console.log(`[GroupBuy] Viewport set to ${width}x${height}`);
-    } catch (vpErr) {
-      // Fallback to a reasonable default
-      await page.setViewport({ width: 1920, height: 1080 });
-      console.log('[GroupBuy] Viewport set to default 1920x1080');
-    }
+    // IMPORTANT: Do NOT call setViewport() - it creates a constrained virtual viewport
+    // Instead, rely on defaultViewport: null and --window-size flag to use full window
+    console.log('[GroupBuy] Using full browser window (no viewport constraint)');
 
     // Set cookies before navigating
     console.log(`[GroupBuy] Setting ${cookies.length} cookies...`);
