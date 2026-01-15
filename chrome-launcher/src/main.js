@@ -223,6 +223,21 @@ async function launchChrome(productUrl, cookies, productName) {
     const pages = await browser.pages();
     const page = pages[0] || await browser.newPage();
 
+    // Fix viewport to use full window size
+    // defaultViewport: null doesn't always work, so we explicitly set it
+    try {
+      const { width, height } = await page.evaluate(() => ({
+        width: window.screen.availWidth || window.innerWidth || 1920,
+        height: window.screen.availHeight || window.innerHeight || 1080
+      }));
+      await page.setViewport({ width, height });
+      console.log(`[GroupBuy] Viewport set to ${width}x${height}`);
+    } catch (vpErr) {
+      // Fallback to a reasonable default
+      await page.setViewport({ width: 1920, height: 1080 });
+      console.log('[GroupBuy] Viewport set to default 1920x1080');
+    }
+
     // Set cookies before navigating
     console.log(`[GroupBuy] Setting ${cookies.length} cookies...`);
     
