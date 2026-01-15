@@ -201,13 +201,16 @@ async function launchChrome(productUrl, cookies, productName) {
       headless: false,
       userDataDir: userDataDir,
       defaultViewport: null,
+      devtools: false,
       ignoreDefaultArgs: ['--enable-automation'],
       args: [
         '--no-first-run',
         '--no-default-browser-check',
         '--start-maximized',
         '--disable-blink-features=AutomationControlled',
-        '--disable-infobars'
+        '--disable-infobars',
+        '--disable-extensions',
+        '--disable-dev-shm-usage'
       ]
     });
 
