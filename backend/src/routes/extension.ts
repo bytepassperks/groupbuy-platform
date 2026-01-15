@@ -119,11 +119,12 @@ router.post('/verify-code', async (req, res) => {
 
     const purchase = result.rows[0];
 
+    // Only return the specific product for this access code, not all user subscriptions
     const subscriptions = await db.query(
-      `SELECT prod.id as product_id, prod.name as product_name, prod.login_url, p.expires_at FROM purchases p
+      `SELECT prod.id as product_id, prod.name as product_name, prod.login_url, prod.icon_url, p.expires_at FROM purchases p
        JOIN products prod ON p.product_id = prod.id
-       WHERE p.user_id = $1 AND p.status = $2 AND p.expires_at > NOW()`,
-      [purchase.user_id, 'active']
+       WHERE p.access_code_hash = $1 AND p.status = $2 AND p.expires_at > NOW()`,
+      [accessCodeHash, 'active']
     );
 
     const userResult = await db.query(
