@@ -224,9 +224,15 @@ async function launchChrome(productUrl, cookies, productName) {
     const pages = await browser.pages();
     const page = pages[0] || await browser.newPage();
 
-    // IMPORTANT: Do NOT call setViewport() - it creates a constrained virtual viewport
-    // Instead, rely on defaultViewport: null and --window-size flag to use full window
-    console.log('[GroupBuy] Using full browser window (no viewport constraint)');
+    // Use CDP to clear any viewport override and ensure full window usage
+    try {
+      const client = await page.target().createCDPSession();
+      // Clear any device metrics override to use natural window size
+      await client.send('Emulation.clearDeviceMetricsOverride');
+      console.log('[GroupBuy] Cleared device metrics override - using full window');
+    } catch (cdpErr) {
+      console.log('[GroupBuy] CDP clear failed, continuing anyway:', cdpErr.message);
+    }
 
     // Set cookies before navigating
     console.log(`[GroupBuy] Setting ${cookies.length} cookies...`);
@@ -276,7 +282,7 @@ async function launchChrome(productUrl, cookies, productName) {
     const checkInterval = setInterval(async () => {
       let testBrowser = null;
       try {
-        testBrowser = await puppeteer.connect({ browserWSEndpoint: browserWsEndpoint });
+        testBrowser = await puppeteer.connect({ browserWSEndpoint: browserWsEndpoint, defaultViewport: null });
         
         // Check all pages for blocked URLs
         const pages = await testBrowser.pages();
