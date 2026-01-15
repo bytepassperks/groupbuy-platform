@@ -16,7 +16,8 @@ let browserWsEndpoint = null;
 let userSession = {
   accessCode: null,
   productId: null,
-  productName: null
+  productName: null,
+  sessionToken: null
 };
 let userDataDir = null;
 
@@ -181,19 +182,19 @@ async function launchChrome(productUrl, cookies, productName) {
         browserWsEndpoint = null;
         
         // Clear session on server
-        if (userSession.accessCode) {
+        if (userSession.accessCode || userSession.sessionToken) {
           try {
             console.log('[GroupBuy] Logging out session...');
             await axios.post(`${API_BASE_URL}/extension/logout`, {
               accessCode: userSession.accessCode,
-              productId: userSession.productId
+              sessionToken: userSession.sessionToken
             });
             console.log('[GroupBuy] Session logged out successfully');
           } catch (logoutErr) {
             console.error('[GroupBuy] Logout error:', logoutErr.message);
           }
         }
-        userSession = { accessCode: null, productId: null, productName: null };
+        userSession = { accessCode: null, productId: null, productName: null, sessionToken: null };
         
         // Clean up temp profile
         try {
@@ -251,7 +252,12 @@ ipcMain.handle('launch-product', async (event, { accessCode, productId, productN
     });
 
     if (response.data.success) {
-      userSession = { accessCode, productId, productName };
+      userSession = { 
+        accessCode, 
+        productId, 
+        productName,
+        sessionToken: response.data.sessionToken || null
+      };
       
       const success = await launchChrome(
         response.data.serviceUrl || response.data.loginUrl,
