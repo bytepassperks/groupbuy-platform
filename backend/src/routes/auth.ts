@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../lib/db';
 import { hashToken, generateSecureToken } from '../lib/encryption';
+import { sendEmail, emailTemplates } from '../lib/email';
 import { AuthenticatedRequest, JWTPayload, User } from '../types';
 import { authMiddleware } from '../middleware/auth';
 
@@ -89,6 +90,11 @@ router.post('/register', async (req, res) => {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    // Send welcome email
+    sendEmail(user.email, emailTemplates.welcome(user.name)).catch(err => {
+      console.error('Failed to send welcome email:', err);
     });
 
     res.status(201).json({

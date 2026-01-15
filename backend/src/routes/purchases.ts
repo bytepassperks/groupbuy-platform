@@ -1,8 +1,9 @@
 import express, { Response } from 'express';
 import { db } from '../lib/db';
 import { generateAccessCode, hashAccessCode } from '../lib/encryption';
+import { sendEmail, emailTemplates } from '../lib/email';
 import { authMiddleware } from '../middleware/auth';
-import { AuthenticatedRequest, Purchase, Product } from '../types';
+import { AuthenticatedRequest, Purchase, Product, User } from '../types';
 
 const router = express.Router();
 
@@ -178,6 +179,35 @@ router.post('/create', authMiddleware, async (req: AuthenticatedRequest, res: Re
 
     const purchase = purchaseResult.rows[0];
 
+    // Get user details for email
+    const userResult = await db.query<User>(
+      'SELECT name, email FROM users WHERE id = $1',
+      [req.user.id]
+    );
+    const user = userResult.rows[0];
+
+    if (user && purchase) {
+      const expiresDate = new Date(purchase.expires_at).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+
+      // Send purchase confirmation email
+      sendEmail(
+        user.email,
+        emailTemplates.purchaseConfirmation(
+          user.name,
+          product.name,
+          purchase.access_code,
+          `$${product.price}`,
+          expiresDate
+        )
+      ).catch(err => {
+        console.error('Failed to send purchase confirmation email:', err);
+      });
+    }
+
     res.status(201).json({
       success: true,
       message: 'Purchase successful!',
@@ -263,6 +293,26 @@ router.post('/my-purchases/:id/regenerate-code', authMiddleware, async (req: Aut
       'DELETE FROM session_tokens WHERE purchase_id = $1',
       [id]
     );
+
+    // Get user and product details for email
+    const detailsResult = await db.query(
+      `SELECT u.name, u.email, p.name as product_name
+       FROM users u
+       JOIN purchases pu ON pu.user_id = u.id
+       JOIN products p ON pu.product_id = p.id
+       WHERE pu.id = $1`,
+      [id]
+    );
+    const details = detailsResult.rows[0];
+
+    if (details) {
+      sendEmail(
+        details.email,
+        emailTemplates.accessCodeDelivery(details.name, details.product_name, newAccessCode)
+      ).catch(err => {
+        console.error('Failed to send access code email:', err);
+      });
+    }
 
     res.json({
       success: true,

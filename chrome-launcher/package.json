@@ -1,7 +1,7 @@
 {
-  "name": "groupbuy-chrome-launcher",
-  "version": "1.0.0",
-  "description": "GroupBuy Chrome Launcher - Secure product access via Chrome",
+  "name": "eliteaccess-launcher",
+  "version": "2.0.0",
+  "description": "EliteAccess - Premium Subscription Access Platform",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
@@ -11,8 +11,8 @@
     "build:all": "electron-builder --win --mac --linux"
   },
   "build": {
-    "appId": "com.groupbuy.chrome-launcher",
-    "productName": "GroupBuy Chrome",
+    "appId": "com.eliteaccess.launcher",
+    "productName": "EliteAccess",
     "directories": {
       "output": "dist"
     },
@@ -21,36 +21,56 @@
       "node_modules/**/*",
       "package.json"
     ],
+    "icon": "build/icon",
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "icon": "build/icon.ico"
     },
     "mac": {
       "target": [
         "zip"
-      ]
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.utilities"
     },
     "linux": {
       "target": [
-        "AppImage"
-      ]
+        "AppImage",
+        "deb"
+      ],
+      "icon": "build/icon.png",
+      "category": "Utility"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "EliteAccess"
     }
   },
   "keywords": [
-    "groupbuy",
-    "chrome",
+    "eliteaccess",
+    "premium",
+    "subscription",
     "launcher"
   ],
-  "author": "GroupBuy",
+  "author": {
+    "name": "EliteAccess.Group",
+    "email": "support@eliteaccess.group"
+  },
+  "homepage": "https://eliteaccess.group",
   "license": "MIT",
   "dependencies": {
     "axios": "^1.13.2",
     "puppeteer-core": "^24.35.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "ws": "^8.19.0"
   },
   "devDependencies": {

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth';
 import Button from '@/components/ui/Button';
@@ -29,8 +30,9 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
-            <Link href="/" className="flex-shrink-0 flex items-center">
-              <span className="text-xl font-bold text-blue-600">GroupBuy</span>
+            <Link href="/" className="flex-shrink-0 flex items-center gap-2">
+              <Image src="/logo.png" alt="EliteAccess" width={40} height={40} className="rounded-lg" />
+              <span className="text-xl font-bold text-blue-900">EliteAccess</span>
             </Link>
             <div className="hidden md:ml-10 md:flex md:space-x-8">
               {navLinks.map((link) => (

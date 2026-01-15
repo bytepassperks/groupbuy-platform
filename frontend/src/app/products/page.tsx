@@ -14,12 +14,12 @@ interface Product {
   name: string;
   slug: string;
   category: string;
-  icon_url?: string;
+  iconUrl?: string;
   description?: string;
-  price: string;
-  renewal_period: string;
-  max_concurrent_users: number;
-  status: string;
+  price: number;
+  renewalPeriod: string;
+  maxConcurrentUsers: number;
+  status?: string;
 }
 
 export default function ProductsPage() {
@@ -95,8 +95,8 @@ export default function ProductsPage() {
               <CardContent className="p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div className="w-16 h-16 bg-blue-100 rounded-lg flex items-center justify-center">
-                    {product.icon_url ? (
-                      <img src={product.icon_url} alt={product.name} className="w-12 h-12 object-contain" />
+                    {product.iconUrl ? (
+                      <img src={product.iconUrl} alt={product.name} className="w-12 h-12 object-contain" />
                     ) : (
                       <span className="text-2xl font-bold text-blue-600">{product.name.charAt(0)}</span>
                     )}
@@ -112,12 +112,12 @@ export default function ProductsPage() {
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <span className="text-2xl font-bold text-gray-900">
-                      ${parseFloat(product.price).toFixed(2)}
+                      ${Number(product.price).toFixed(2)}
                     </span>
-                    <span className="text-gray-500 text-sm">/{product.renewal_period}</span>
+                    <span className="text-gray-500 text-sm">/{product.renewalPeriod}</span>
                   </div>
                   <span className="text-xs text-gray-500">
-                    {product.max_concurrent_users} users max
+                    {product.maxConcurrentUsers} users max
                   </span>
                 </div>
                 <Link href={`/products/${product.slug}`}>

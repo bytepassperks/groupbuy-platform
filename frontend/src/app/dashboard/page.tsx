@@ -46,9 +46,10 @@ export default function DashboardPage() {
   }, [isHydrated, authLoading, isAuthenticated, router]);
 
   const { data: purchasesData, isLoading, refetch } = useQuery({
-    queryKey: ['my-purchases'],
+    queryKey: ['my-purchases', user?.id],
     queryFn: () => purchasesApi.getMyPurchases(),
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && !!user?.id,
+    staleTime: 0,
   });
 
   const purchases: Purchase[] = purchasesData?.data?.purchases || [];
@@ -111,7 +112,7 @@ export default function DashboardPage() {
     };
 
     const extensionDownloadUrl = 'https://github.com/bytepassperks/groupbuy-platform/archive/refs/heads/devin/1768279360-groupbuy-platform.zip';
-    const desktopAppBaseUrl = 'https://github.com/bytepassperks/groupbuy-platform/releases/latest/download';
+    const desktopAppBaseUrl = 'https://github.com/bytepassperks/groupbuy-platform/releases/download/v2.0.0';
 
     return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -164,7 +165,7 @@ export default function DashboardPage() {
               </Card>
             </div>
 
-            {activePurchases.length > 0 && showExtensionGuide && (
+            {activePurchases.length > 0 && showExtensionGuide && user?.role === 'admin' && (
               <Card className="mb-8 border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
                 <CardHeader>
                   <div className="flex items-center justify-between">
@@ -173,8 +174,8 @@ export default function DashboardPage() {
                         <Puzzle className="w-6 h-6 text-white" />
                       </div>
                       <div>
-                        <h2 className="text-xl font-bold text-gray-900">Get Started with Auto-Login</h2>
-                        <p className="text-sm text-gray-600">Install our browser extension for seamless access</p>
+                        <h2 className="text-xl font-bold text-gray-900">Admin: Cookie Capture Extension</h2>
+                        <p className="text-sm text-gray-600">Install the browser extension to capture cookies from logged-in sessions</p>
                       </div>
                     </div>
                     <button 
@@ -356,22 +357,35 @@ export default function DashboardPage() {
                       <h3 className="font-semibold text-gray-900 mb-3">Download for your platform</h3>
                       <div className="space-y-3">
                         <a 
-                          href={`${desktopAppBaseUrl}/GroupBuy-Setup-1.0.0.exe`}
-                          className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-colors"
+                          href={`${desktopAppBaseUrl}/EliteAccess-Setup-Windows.exe`}
+                          className="flex items-center justify-between p-3 bg-blue-50 border-2 border-blue-400 rounded-lg hover:bg-blue-100 transition-colors"
                         >
                           <div className="flex items-center space-x-3">
-                            <Monitor className="w-5 h-5 text-blue-600" />
-                            <span className="font-medium text-gray-900">Windows</span>
+                            <Chrome className="w-5 h-5 text-blue-600" />
+                            <div>
+                              <span className="font-medium text-gray-900">EliteAccess (Windows)</span>
+                              <span className="ml-2 text-xs bg-blue-600 text-white px-2 py-0.5 rounded">Recommended</span>
+                            </div>
                           </div>
-                          <Download className="w-4 h-4 text-gray-400" />
+                          <Download className="w-4 h-4 text-blue-600" />
                         </a>
                         <a 
-                          href={`${desktopAppBaseUrl}/GroupBuy-1.0.0-mac.zip`}
+                          href={`${desktopAppBaseUrl}/EliteAccess-Setup-macOS.dmg`}
                           className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-colors"
                         >
                           <div className="flex items-center space-x-3">
                             <Apple className="w-5 h-5 text-gray-800" />
-                            <span className="font-medium text-gray-900">macOS (zip)</span>
+                            <span className="font-medium text-gray-900">EliteAccess (macOS)</span>
+                          </div>
+                          <Download className="w-4 h-4 text-gray-400" />
+                        </a>
+                        <a 
+                          href={`${desktopAppBaseUrl}/EliteAccess-Linux.AppImage`}
+                          className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-colors"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <Monitor className="w-5 h-5 text-purple-600" />
+                            <span className="font-medium text-gray-900">EliteAccess (Linux)</span>
                           </div>
                           <Download className="w-4 h-4 text-gray-400" />
                         </a>
