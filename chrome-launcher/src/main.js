@@ -14,8 +14,8 @@ const REALISTIC_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb
 
 app.disableHardwareAcceleration();
 
-const API_BASE_URL = 'http://165.22.2.0/api';
-const APP_NAME = 'GroupBuy Chrome';
+const API_BASE_URL = 'https://eliteaccess.group/api';
+const APP_NAME = 'EliteAccess';
 
 // Default blocked URL patterns for settings/billing pages (comprehensive)
 const DEFAULT_BLOCKED_PATTERNS = [
@@ -192,11 +192,11 @@ async function launchChrome(productUrl, cookies, productName) {
     return false;
   }
 
-  userDataDir = path.join(os.tmpdir(), 'groupbuy-chrome-profile-' + Date.now());
+  userDataDir = path.join(os.tmpdir(), 'eliteaccess-profile-' + Date.now());
 
-  console.log(`[GroupBuy] Launching Chrome with puppeteer-core...`);
-  console.log(`[GroupBuy] Product URL: ${productUrl}`);
-  console.log(`[GroupBuy] Cookies to inject: ${cookies.length}`);
+  console.log(`[EliteAccess] Launching Chrome with stealth mode...`);
+  console.log(`[EliteAccess] Product URL: ${productUrl}`);
+  console.log(`[EliteAccess] Cookies to inject: ${cookies.length}`);
 
   try {
     // Launch Chrome with puppeteer-extra + stealth plugin
@@ -223,7 +223,7 @@ async function launchChrome(productUrl, cookies, productName) {
       ]
     });
 
-    console.log('[GroupBuy] Chrome launched successfully');
+    console.log('[EliteAccess] Chrome launched successfully');
 
     // Save WebSocket endpoint for later monitoring
     browserWsEndpoint = browser.wsEndpoint();
@@ -237,13 +237,13 @@ async function launchChrome(productUrl, cookies, productName) {
       const client = await page.target().createCDPSession();
       // Clear any device metrics override to use natural window size
       await client.send('Emulation.clearDeviceMetricsOverride');
-      console.log('[GroupBuy] Cleared device metrics override - using full window');
+      console.log('[EliteAccess] Cleared device metrics override - using full window');
     } catch (cdpErr) {
-      console.log('[GroupBuy] CDP clear failed, continuing anyway:', cdpErr.message);
+      console.log('[EliteAccess] CDP clear failed, continuing anyway:', cdpErr.message);
     }
 
     // Set cookies before navigating
-    console.log(`[GroupBuy] Setting ${cookies.length} cookies...`);
+    console.log(`[EliteAccess] Setting ${cookies.length} cookies...`);
     
     // Convert cookies to puppeteer format
     const puppeteerCookies = cookies.map(cookie => {
@@ -272,19 +272,19 @@ async function launchChrome(productUrl, cookies, productName) {
 
     // Set all cookies
     await page.setCookie(...puppeteerCookies);
-    console.log('[GroupBuy] Cookies set successfully');
+    console.log('[EliteAccess] Cookies set successfully');
 
     // Navigate to the product URL
-    console.log(`[GroupBuy] Navigating to ${productUrl}...`);
+    console.log(`[EliteAccess] Navigating to ${productUrl}...`);
     await page.goto(productUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    console.log('[GroupBuy] Navigation complete');
+    console.log('[EliteAccess] Navigation complete');
 
     // Store the service URL for redirecting back
     userSession.serviceUrl = productUrl;
 
     // Disconnect puppeteer but keep browser open
     browser.disconnect();
-    console.log('[GroupBuy] Puppeteer disconnected, browser running independently');
+    console.log('[EliteAccess] Puppeteer disconnected, browser running independently');
 
     // Monitor for browser close and blocked URLs
     const checkInterval = setInterval(async () => {
@@ -298,8 +298,8 @@ async function launchChrome(productUrl, cookies, productName) {
           try {
             const currentUrl = p.url();
             if (isBlockedUrl(currentUrl)) {
-              console.log(`[GroupBuy] Blocked URL detected: ${currentUrl}`);
-              console.log(`[GroupBuy] Redirecting to: ${userSession.serviceUrl}`);
+              console.log(`[EliteAccess] Blocked URL detected: ${currentUrl}`);
+              console.log(`[EliteAccess] Redirecting to: ${userSession.serviceUrl}`);
               await p.goto(userSession.serviceUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
             }
           } catch (pageErr) {
@@ -309,7 +309,7 @@ async function launchChrome(productUrl, cookies, productName) {
         
         testBrowser.disconnect();
       } catch (err) {
-        console.log('[GroupBuy] Browser closed detected, cleaning up...');
+        console.log('[EliteAccess] Browser closed detected, cleaning up...');
         if (urlMonitorInterval) {
           clearInterval(urlMonitorInterval);
           urlMonitorInterval = null;
@@ -321,14 +321,14 @@ async function launchChrome(productUrl, cookies, productName) {
         // Clear session on server
         if (userSession.accessCode || userSession.sessionToken) {
           try {
-            console.log('[GroupBuy] Logging out session...');
+            console.log('[EliteAccess] Logging out session...');
             await axios.post(`${API_BASE_URL}/extension/logout`, {
               accessCode: userSession.accessCode,
               sessionToken: userSession.sessionToken
             });
-            console.log('[GroupBuy] Session logged out successfully');
+            console.log('[EliteAccess] Session logged out successfully');
           } catch (logoutErr) {
-            console.error('[GroupBuy] Logout error:', logoutErr.message);
+            console.error('[EliteAccess] Logout error:', logoutErr.message);
           }
         }
         userSession = { accessCode: null, productId: null, productName: null, sessionToken: null, serviceUrl: null, blockedUrls: [] };
@@ -340,7 +340,7 @@ async function launchChrome(productUrl, cookies, productName) {
             userDataDir = null;
           }
         } catch (cleanupErr) {
-          console.error('[GroupBuy] Failed to clean up:', cleanupErr.message);
+          console.error('[EliteAccess] Failed to clean up:', cleanupErr.message);
         }
 
         // Notify renderer to reset UI and show login window
@@ -355,7 +355,7 @@ async function launchChrome(productUrl, cookies, productName) {
 
     return true;
   } catch (err) {
-    console.error('[GroupBuy] Failed to launch Chrome:', err.message);
+    console.error('[EliteAccess] Failed to launch Chrome:', err.message);
     dialog.showErrorBox('Launch Error', `Failed to launch Chrome: ${err.message}`);
     return false;
   }

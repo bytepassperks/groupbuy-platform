@@ -8,8 +8,8 @@ import { Providers } from "./providers";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "GroupBuy - Premium Tools at Affordable Prices",
-  description: "Access premium tools and services at a fraction of the cost through our secure group buying platform.",
+  title: "EliteAccess - Premium Tools at Affordable Prices",
+  description: "Access premium tools and services at a fraction of the cost through our secure premium access platform.",
 };
 
 export default function RootLayout({

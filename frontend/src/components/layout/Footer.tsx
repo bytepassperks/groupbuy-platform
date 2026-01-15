@@ -9,10 +9,13 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           <div className="col-span-1 md:col-span-2">
             <Link href="/" className="text-2xl font-bold text-white">
-              GroupBuy
+              EliteAccess
             </Link>
             <p className="mt-4 text-sm">
-              Access premium tools and services at a fraction of the cost through our secure group buying platform.
+              Access premium tools and services at a fraction of the cost through our secure premium access platform.
+            </p>
+            <p className="mt-2 text-sm">
+              <a href="mailto:support@eliteaccess.group" className="text-blue-400 hover:text-blue-300">support@eliteaccess.group</a>
             </p>
           </div>
           
@@ -48,7 +51,7 @@ export default function Footer() {
         </div>
         
         <div className="mt-8 pt-8 border-t border-gray-800 text-center text-sm">
-          <p>&copy; {new Date().getFullYear()} GroupBuy. All rights reserved.</p>
+          <p>&copy; {new Date().getFullYear()} EliteAccess. All rights reserved.</p>
         </div>
       </div>
     </footer>
